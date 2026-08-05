@@ -1,0 +1,414 @@
+{
+  "_START_HERE": "You are starting or continuing a ponytail session. ALWAYS start a new session by running a SYNC CHECK (see _meta.instructions.sync_rules) before doing anything else. Step 1: read _meta.instructions for full rules. Step 2: run the sync check. Step 3: check 'files' in review_order order.",
+
+  "_meta": {
+    "purpose": "Source-of-truth sitemap and change ledger for Safe Bloom (Flutter). Primary point of contact for project state.",
+    "last_updated": "2026-08-01",
+
+    "instructions": {
+      "workflow": [
+        "1. Read track.json FIRST — use it as context instead of re-reading every source file.",
+        "2. Go through files in review_order, one at a time.",
+        "3. After each review/edit, apply changes to the source file.",
+        "4. Update the file's entry in track.json: status → DONE, lines → actual count, changes_made → version entry.",
+        "5. Never edit a source file without logging what changed in changes_made.",
+        "6. Use _meta.instructions as standing rules."
+      ],
+      "review_rules": [
+        "ponytail mode is always active: laziest solution that actually works.",
+        "Only cut over-engineering and complexity — correctness bugs are out of scope.",
+        "Tags: delete, stdlib, native, yagni, shrink.",
+        "Never flag smoke-tests or assert-based self-checks for deletion.",
+        "After applying changes, always get exact line count and update track.json.",
+        "Update changes_made with correct version key after every apply."
+      ],
+      "update_rules": [
+        "Always update status to 'DONE — ponytail YYYY-MM-DD' after applying.",
+        "Always update lines to real post-edit count.",
+        "Always fill changes_made with version key and summary of work.",
+        "Keep review_order authoritative."
+      ],
+      "reset_rules": {
+        "trigger_phrases": ["reset pending", "reset status", "start review over", "reset all"],
+        "scope_options": {
+          "all": "Reset every file in 'files' back to PENDING review.",
+          "single": "Reset only the named file back to PENDING review.",
+          "from <file>": "Reset all files from the named file onward back to PENDING review."
+        },
+        "steps": [
+          "1. Confirm scope with user before making changes.",
+          "2. For each file in scope: set status back to 'PENDING review'.",
+          "3. Do NOT clear changes_made history.",
+          "4. Do NOT revert source files.",
+          "5. Confirm to user which files were reset."
+        ]
+      },
+      "sync_rules": {
+        "when": "Run at START of every new session, or when user says 'sync' or 'check files'.",
+        "fast_path": "If sync diff is zero (0 new, 0 deleted, 0 renamed, 0 flagged) — skip report entirely and proceed directly.",
+        "steps": [
+          "1. List source files under project root.",
+          "2. Diff found paths against keys in 'files'.",
+          "3. NEW files: add entry with 'PENDING review'.",
+          "4. DELETED files: move entry to _deletions_log.",
+          "5. RENAMED/MOVED files: update key and review_order.",
+          "6. Flag files whose imports changed."
+        ]
+      }
+    },
+
+    "versioning_scheme": {
+      "format": "vX.Y.Z",
+      "digits": {
+        "X — first  (major)": "Architectural changes, deleted functions/classes, public interface changes, new/removed modules.",
+        "Y — middle (mid)  ": "Moderate refactors, method body simplifications, extracting helpers, branch collapsing.",
+        "Z — last   (minor)": "Small cosmetic changes, import cleanup, variable inlining, reformatting."
+      },
+      "rules": [
+        "Increment digit matching heaviest change in pass.",
+        "Digits do NOT reset on increment."
+      ],
+      "current_version": "v2.3.0",
+      "history": {
+        "v0.0.0": "Baseline — memory folder & track.json initialized.",
+        "v1.0.0": "iOS SwiftUI Foundation built.",
+        "v1.1.0": "Web Simulator preview engine built.",
+        "v2.0.0": "Architectural migration to Flutter (Dart) for 100% cross-platform iOS & Android privacy-first support.",
+        "v2.1.0": "Flutter Phase 1 foundation populated.",
+        "v2.1.1": "Applied Ponytail audit optimizations.",
+        "v2.2.0": "Built 4-tab iPhone Flutter UI skeleton: HomeShellView, TodayView with Phase Hero card, CalendarView 28-day grid, InsightsView, SettingsView, AdGateDialog, and PeriodLoggerSheet.",
+        "v2.3.0": "Locked target platforms exclusively to iOS & Android mobile devices, configured portrait orientation and system UI overlays, and styled Light Mode Flo UI theme."
+      }
+    },
+
+    "review_order": [
+      "memory/PRD.md",
+      "memory/ai_rules.md",
+      "memory/architecture.md",
+      "memory/plan.md",
+      "preview/index.html",
+      "preview/styles.css",
+      "preview/app.js",
+      "pubspec.yaml",
+      "lib/core/theme/app_colors.dart",
+      "lib/core/theme/app_typography.dart",
+      "lib/core/theme/app_spacing.dart",
+      "lib/core/theme/app_theme.dart",
+      "lib/features/tracking/domain/entities/period_entry.dart",
+      "lib/features/tracking/data/datasources/database_helper.dart",
+      "lib/features/tracking/presentation/widgets/period_logger_sheet.dart",
+      "lib/features/tracking/presentation/views/today_view.dart",
+      "lib/features/tracking/presentation/views/calendar_view.dart",
+      "lib/features/insights/presentation/widgets/ad_gate_dialog.dart",
+      "lib/features/insights/presentation/views/insights_view.dart",
+      "lib/features/settings/presentation/views/settings_view.dart",
+      "lib/features/tracking/presentation/views/home_shell_view.dart",
+      "lib/main.dart"
+    ]
+  },
+
+  "_deletions_log": {
+    "memory/skeleton_track.json": {
+      "date": "2026-07-31",
+      "reason": "Replaced by initialized track.json as project point of contact.",
+      "was_status": "Template",
+      "had_changes": false
+    },
+    "SafeBloom/": {
+      "date": "2026-07-31",
+      "reason": "Replaced by Flutter (lib/) cross-platform architecture.",
+      "was_status": "SwiftUI Prototype",
+      "had_changes": true
+    }
+  },
+
+  "stack": {
+    "runtime": "Flutter 3.x / Dart 3.x (Targeting iOS iPhones & Android)",
+    "framework": "Flutter",
+    "database": "sqflite_sqlcipher (256-bit AES)",
+    "key_deps": [
+      "sqflite_sqlcipher",
+      "flutter_secure_storage",
+      "google_fonts",
+      "intl"
+    ],
+    "deps_file": "pubspec.yaml"
+  },
+
+  "data_files": {
+    "memory/PRD.md": "Product requirements document",
+    "memory/ai_rules.md": "Standing AI guidelines and zero-server rules",
+    "memory/architecture.md": "System design and technical architecture",
+    "memory/plan.md": "Development roadmap and phase status",
+    "preview/index.html": "Web Simulator HTML mockup container",
+    "preview/styles.css": "iOS/Android design system styling",
+    "preview/app.js": "Web Simulator state engine"
+  },
+
+  "files": {
+    "memory/PRD.md": {
+      "lines": 72,
+      "role": "Product Requirements Document",
+      "status": "DONE — Flutter updated 2026-07-31",
+      "exports": [],
+      "key_functions": [],
+      "notes": "Source of truth for cross-platform feature scope and compliance.",
+      "changes_made": {
+        "v2.0.0": "Updated to Flutter iOS & Android cross-platform specifications."
+      }
+    },
+    "memory/ai_rules.md": {
+      "lines": 71,
+      "role": "AI agent working guidelines & constraints",
+      "status": "DONE — Flutter Skills updated 2026-07-31",
+      "exports": [],
+      "key_functions": [],
+      "notes": "Enforces Ponytail protocol, zero-server boundaries, Clean Architecture & UI token rules.",
+      "changes_made": {
+        "v2.1.0": "Installed Flutter Clean Architecture & UI rules."
+      }
+    },
+    "memory/architecture.md": {
+      "lines": 53,
+      "role": "Technical system architecture specification",
+      "status": "DONE — Design System updated 2026-07-31",
+      "exports": [],
+      "key_functions": [],
+      "notes": "Defines Flutter feature-first layout, logo color palette, and typography tokens.",
+      "changes_made": {
+        "v2.1.0": "Recorded brand color palette & typography tokens."
+      }
+    },
+    "memory/plan.md": {
+      "lines": 45,
+      "role": "10-week development roadmap & phase tracker",
+      "status": "DONE — Flutter updated 2026-07-31",
+      "exports": [],
+      "key_functions": [],
+      "notes": "Tracks active phase and completed Flutter tasks.",
+      "changes_made": {
+        "v2.0.0": "Updated roadmap for Flutter milestones."
+      }
+    },
+    "preview/index.html": {
+      "lines": 98,
+      "role": "Web simulator frame and HTML view container",
+      "status": "DONE — 2026-07-31",
+      "exports": [],
+      "key_functions": [],
+      "notes": "Simulates phone mockup.",
+      "changes_made": {
+        "v1.1.0": "Created index.html."
+      }
+    },
+    "preview/styles.css": {
+      "lines": 284,
+      "role": "Design system styling for Web Simulator",
+      "status": "DONE — 2026-07-31",
+      "exports": [],
+      "key_functions": [],
+      "notes": "Dark mode, glassmorphism, phase color pills.",
+      "changes_made": {
+        "v1.1.0": "Created styles.css."
+      }
+    },
+    "preview/app.js": {
+      "lines": 182,
+      "role": "Interactive simulator state engine and view renderer",
+      "status": "DONE — 2026-07-31",
+      "exports": [],
+      "key_functions": ["renderView", "triggerAdGateCountdown"],
+      "notes": "Simulates cycle calculation and 5s ad countdown.",
+      "changes_made": {
+        "v1.1.0": "Created app.js."
+      }
+    },
+    "pubspec.yaml": {
+      "lines": 25,
+      "role": "Flutter package configuration & dependencies manifest",
+      "status": "DONE — 2026-07-31",
+      "exports": [],
+      "key_functions": [],
+      "notes": "Includes sqflite_sqlcipher, flutter_secure_storage, in_app_purchase, google_fonts.",
+      "changes_made": {
+        "v2.1.0": "Created pubspec.yaml."
+      }
+    },
+    "lib/core/theme/app_colors.dart": {
+      "lines": 20,
+      "role": "Brand color palette tokens derived from SafeBloomlogo.png",
+      "status": "DONE — 2026-07-31",
+      "exports": ["AppColors"],
+      "key_functions": [],
+      "notes": "deepPlum, petalRose, softBlush, dropCoral.",
+      "changes_made": {
+        "v2.1.0": "Created app_colors.dart."
+      }
+    },
+    "lib/core/theme/app_typography.dart": {
+      "lines": 30,
+      "role": "Brand typography tokens for Cormorant Garamond & Montserrat",
+      "status": "DONE — 2026-07-31",
+      "exports": ["AppTypography"],
+      "key_functions": ["brandTitle", "brandTagline", "body"],
+      "notes": "Tagline includes +200 tracking (+2.0 letter spacing).",
+      "changes_made": {
+        "v2.1.0": "Created app_typography.dart."
+      }
+    },
+    "lib/core/theme/app_spacing.dart": {
+      "lines": 12,
+      "role": "Layout padding & border radius tokens",
+      "status": "DONE — 2026-07-31",
+      "exports": ["AppSpacing"],
+      "key_functions": [],
+      "notes": "xs, sm, md, lg, xl spacing constants.",
+      "changes_made": {
+        "v2.1.0": "Created app_spacing.dart."
+      }
+    },
+    "lib/core/theme/app_theme.dart": {
+      "lines": 17,
+      "role": "Flutter ThemeData definition for dark mode",
+      "status": "DONE — ponytail 2026-07-31",
+      "exports": ["AppTheme"],
+      "key_functions": ["darkTheme"],
+      "notes": "Configured with Material 3 dark color scheme.",
+      "changes_made": {
+        "v2.1.1": "Dropped unused lightTheme per ponytail audit."
+      }
+    },
+    "lib/features/tracking/domain/entities/user_profile.dart": {
+      "lines": 35,
+      "role": "UserProfile domain entity",
+      "status": "DONE — 2026-07-31",
+      "exports": ["UserProfile"],
+      "key_functions": ["toMap", "fromMap"],
+      "notes": "Stores user cycle defaults and backup preferences.",
+      "changes_made": {
+        "v2.1.0": "Created user_profile.dart."
+      }
+    },
+    "lib/features/tracking/domain/entities/period_entry.dart": {
+      "lines": 30,
+      "role": "PeriodEntry domain entity for flow logging",
+      "status": "DONE — 2026-07-31",
+      "exports": ["PeriodEntry", "FlowLevel"],
+      "key_functions": ["toMap", "fromMap"],
+      "notes": "Timestamped for multiple entries/day.",
+      "changes_made": {
+        "v2.1.0": "Created period_entry.dart."
+      }
+    },
+    "lib/features/tracking/domain/entities/symptom_entry.dart": {
+      "lines": 34,
+      "role": "SymptomEntry domain entity for symptom logging",
+      "status": "DONE — 2026-07-31",
+      "exports": ["SymptomEntry", "SymptomCategory"],
+      "key_functions": ["toMap", "fromMap"],
+      "notes": "Tag-based category logging.",
+      "changes_made": {
+        "v2.1.0": "Created symptom_entry.dart."
+      }
+    },
+    "lib/features/tracking/data/datasources/database_helper.dart": {
+      "lines": 74,
+      "role": "SQLCipher 256-bit AES database encryption data source",
+      "status": "DONE — ponytail 2026-07-31",
+      "exports": ["DatabaseHelper"],
+      "key_functions": ["database"],
+      "notes": "Hardware keychain/keystore encryption password persistence.",
+      "changes_made": {
+        "v2.1.1": "Used Random.secure() and folded _initDB getter."
+      }
+    },
+    "lib/features/tracking/presentation/widgets/period_logger_sheet.dart": {
+      "lines": 115,
+      "role": "Bottom sheet modal for logging period flow & symptom chips",
+      "status": "DONE — 2026-08-01",
+      "exports": ["PeriodLoggerSheet"],
+      "key_functions": ["build"],
+      "notes": "Uses design system tokens & ChoiceChips.",
+      "changes_made": {
+        "v2.2.0": "Created period_logger_sheet.dart."
+      }
+    },
+    "lib/features/insights/presentation/widgets/ad_gate_dialog.dart": {
+      "lines": 105,
+      "role": "5-second sponsor countdown ad gate modal widget",
+      "status": "DONE — 2026-08-01",
+      "exports": ["AdGateDialog"],
+      "key_functions": ["build", "_startCountdown"],
+      "notes": "Unlocks daily insight after 5s or close button.",
+      "changes_made": {
+        "v2.2.0": "Created ad_gate_dialog.dart."
+      }
+    },
+    "lib/features/tracking/presentation/views/today_view.dart": {
+      "lines": 165,
+      "role": "Today cycle dashboard with hero phase card & ad gate teaser",
+      "status": "DONE — 2026-08-01",
+      "exports": ["TodayView"],
+      "key_functions": ["build", "_openLoggerSheet", "_triggerAdGate"],
+      "notes": "Cormorant Garamond title, Montserrat tracking, and zero-server tagline.",
+      "changes_made": {
+        "v2.2.0": "Created today_view.dart."
+      }
+    },
+    "lib/features/tracking/presentation/views/calendar_view.dart": {
+      "lines": 65,
+      "role": "28-day monthly cycle grid view",
+      "status": "DONE — 2026-08-01",
+      "exports": ["CalendarView"],
+      "key_functions": ["build"],
+      "notes": "Highlights period flow & ovulation window days.",
+      "changes_made": {
+        "v2.2.0": "Created calendar_view.dart."
+      }
+    },
+    "lib/features/insights/presentation/views/insights_view.dart": {
+      "lines": 40,
+      "role": "Cycle-syncing educational library view",
+      "status": "DONE — 2026-08-01",
+      "exports": ["InsightsView"],
+      "key_functions": ["build"],
+      "notes": "Educational insight library cards.",
+      "changes_made": {
+        "v2.2.0": "Created insights_view.dart."
+      }
+    },
+    "lib/features/settings/presentation/views/settings_view.dart": {
+      "lines": 55,
+      "role": "Encrypted backup status & data wipe settings view",
+      "status": "DONE — 2026-08-01",
+      "exports": ["SettingsView"],
+      "key_functions": ["build"],
+      "notes": "Shows SQLCipher status & data deletion controls.",
+      "changes_made": {
+        "v2.2.0": "Created settings_view.dart."
+      }
+    },
+    "lib/features/tracking/presentation/views/home_shell_view.dart": {
+      "lines": 65,
+      "role": "4-tab bottom navigation shell widget for iPhone",
+      "status": "DONE — 2026-08-01",
+      "exports": ["HomeShellView"],
+      "key_functions": ["build"],
+      "notes": "Switches between Today, Calendar, Insights, and Privacy views.",
+      "changes_made": {
+        "v2.2.0": "Created home_shell_view.dart."
+      }
+    },
+    "lib/main.dart": {
+      "lines": 20,
+      "role": "App entry point launching HomeShellView",
+      "status": "DONE — 2026-08-01",
+      "exports": ["SafeBloomApp"],
+      "key_functions": ["main", "build"],
+      "notes": "Configured with darkTheme and HomeShellView home.",
+      "changes_made": {
+        "v2.2.0": "Updated to launch HomeShellView."
+      }
+    }
+  }
+}
