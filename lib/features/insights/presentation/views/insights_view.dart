@@ -3,13 +3,11 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 
-import 'package:flutter/material.dart';
-import '../../../../core/theme/app_colors.dart';
-import '../../../../core/theme/app_spacing.dart';
-import '../../../../core/theme/app_typography.dart';
+import '../widgets/cycle_charts_widget.dart';
 
 class InsightsView extends StatefulWidget {
-  const InsightsView({super.key});
+  final GlobalKey<CycleChartsWidgetState>? chartsKey;
+  const InsightsView({super.key, this.chartsKey});
 
   @override
   State<InsightsView> createState() => _InsightsViewState();
@@ -128,13 +126,20 @@ class _InsightsViewState extends State<InsightsView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Health & Secret Library', style: AppTypography.brandTitle(fontSize: 28)),
+          Text('Health & Insights Library', style: AppTypography.brandTitle(fontSize: 28)),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'CYCLE-SYNCED KNOWLEDGE & EXPERT ADVICE',
+            'CYCLE-SYNCED KNOWLEDGE & TREND VISUALIZATIONS',
             style: AppTypography.brandTagline(color: AppColors.petalRose, fontSize: 9),
           ),
           const SizedBox(height: AppSpacing.md),
+
+          // Interactive Cycle & Symptom Charts Card
+          CycleChartsWidget(key: widget.chartsKey),
+
+          const SizedBox(height: AppSpacing.lg),
+          Text('Cycle-Synced Articles', style: AppTypography.brandTitle(fontSize: 22)),
+          const SizedBox(height: AppSpacing.xs),
 
           // Category Chips
           SingleChildScrollView(
@@ -175,7 +180,7 @@ class _InsightsViewState extends State<InsightsView> {
                 border: Border.all(color: AppColors.lightCardBorder),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.02),
+                    color: Colors.black.withValues(alpha: 0.02),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   )
@@ -195,7 +200,7 @@ class _InsightsViewState extends State<InsightsView> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: AppColors.petalRose.withOpacity(0.15),
+                              color: AppColors.petalRose.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(

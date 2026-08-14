@@ -15,3 +15,5 @@ A few resources to get you started if this is your first Flutter project:
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
+
+set ANDROID_HOME=D:\Apps\android studio\sdk&& set JAVA_HOME=D:\Apps\jdk-17\jdk-17.0.12+7&& set PATH=D:\Apps\android studio\sdk\platform-tools;%PATH%&& D:\Apps\flutter\bin\flutter.bat run -d 9HP7TG4HUOLFRSMN

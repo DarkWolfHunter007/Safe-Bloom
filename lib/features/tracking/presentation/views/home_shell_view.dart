@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../insights/presentation/views/insights_view.dart';
+import '../../../insights/presentation/widgets/cycle_charts_widget.dart';
 import '../../../settings/presentation/views/settings_view.dart';
 import 'calendar_view.dart';
 import 'today_view.dart';
@@ -15,13 +16,24 @@ class HomeShellView extends StatefulWidget {
 
 class _HomeShellViewState extends State<HomeShellView> {
   int _currentIndex = 0;
+  final GlobalKey<TodayViewState> _todayKey = GlobalKey<TodayViewState>();
+  final GlobalKey<CalendarViewState> _calendarKey = GlobalKey<CalendarViewState>();
+  final GlobalKey<CycleChartsWidgetState> _chartsKey = GlobalKey<CycleChartsWidgetState>();
+  final GlobalKey<SettingsViewState> _settingsKey = GlobalKey<SettingsViewState>();
 
-  final List<Widget> _views = const [
-    TodayView(),
-    CalendarView(),
-    InsightsView(),
-    SettingsView(),
-  ];
+  void _onTabTapped(int index) {
+    setState(() => _currentIndex = index);
+
+    if (index == 0) {
+      _todayKey.currentState?.refresh();
+    } else if (index == 1) {
+      _calendarKey.currentState?.refresh();
+    } else if (index == 2) {
+      _chartsKey.currentState?.refresh();
+    } else if (index == 3) {
+      _settingsKey.currentState?.refresh();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,12 +42,17 @@ class _HomeShellViewState extends State<HomeShellView> {
       body: SafeArea(
         child: IndexedStack(
           index: _currentIndex,
-          children: _views,
+          children: [
+            TodayView(key: _todayKey),
+            CalendarView(key: _calendarKey),
+            InsightsView(chartsKey: _chartsKey),
+            SettingsView(key: _settingsKey),
+          ],
         ),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: _onTabTapped,
         backgroundColor: AppColors.lightCardBackground,
         selectedItemColor: AppColors.dropCoral,
         unselectedItemColor: AppColors.textMuted,
@@ -59,9 +76,9 @@ class _HomeShellViewState extends State<HomeShellView> {
             label: 'INSIGHTS',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.lock_outline),
-            activeIcon: Icon(Icons.lock),
-            label: 'PRIVACY',
+            icon: Icon(Icons.person_outline),
+            activeIcon: Icon(Icons.person),
+            label: 'PROFILE',
           ),
         ],
       ),

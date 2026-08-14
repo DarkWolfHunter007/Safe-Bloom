@@ -69,7 +69,7 @@ class _AdGateDialogState extends State<AdGateDialog> {
                     child: Container(
                       padding: const EdgeInsets.all(AppSpacing.xs + 2),
                       decoration: BoxDecoration(
-                        color: _canClose ? AppColors.dropCoral : AppColors.petalRose.withOpacity(0.5),
+                        color: _canClose ? AppColors.dropCoral : AppColors.petalRose.withValues(alpha: 0.5),
                         shape: BoxShape.circle,
                       ),
                       child: Text(
@@ -89,12 +89,12 @@ class _AdGateDialogState extends State<AdGateDialog> {
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [AppColors.petalRose.withOpacity(0.15), AppColors.lightCardBackground],
+                    colors: [AppColors.petalRose.withValues(alpha: 0.15), AppColors.lightCardBackground],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                  border: Border.all(color: AppColors.petalRose.withOpacity(0.3)),
+                  border: Border.all(color: AppColors.petalRose.withValues(alpha: 0.3)),
                 ),
                 child: Column(
                   children: [
