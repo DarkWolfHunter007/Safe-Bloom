@@ -162,8 +162,29 @@ class ArticleService {
   }
 
   static const String _readArticlesKey = 'read_article_ids_json';
+  static const String _readArticleVersionsKey = 'read_article_versions_json';
 
-  /// Returns set of article IDs that user has read
+  /// Returns map of article ID to the version number the user has read
+  Future<Map<String, int>> getReadArticleVersions() async {
+    try {
+      final jsonStr = await _secureStorage.read(key: _readArticleVersionsKey);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final Map<String, dynamic> map = jsonDecode(jsonStr);
+        return map.map((k, v) => MapEntry(k, int.tryParse(v.toString()) ?? 1));
+      }
+    } catch (e) {
+      debugPrint('Error reading read article versions: $e');
+    }
+    // Fallback migration from legacy _readArticlesKey set if present
+    try {
+      final legacySet = await getReadArticleIds();
+      return {for (var id in legacySet) id: 1};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Returns set of article IDs that user has read (legacy compatibility)
   Future<Set<String>> getReadArticleIds() async {
     try {
       final jsonStr = await _secureStorage.read(key: _readArticlesKey);
@@ -177,17 +198,22 @@ class ArticleService {
     return {};
   }
 
-  /// Marks an article ID as read in local secure storage
-  Future<void> markArticleAsRead(String articleId) async {
+  /// Marks an article ID as read at a specific version in local secure storage
+  Future<void> markArticleAsRead(String articleId, [int version = 1]) async {
     try {
-      final current = await getReadArticleIds();
-      if (!current.contains(articleId)) {
-        current.add(articleId);
-        await _secureStorage.write(
-          key: _readArticlesKey,
-          value: jsonEncode(current.toList()),
-        );
-      }
+      final current = await getReadArticleVersions();
+      current[articleId] = version;
+      await _secureStorage.write(
+        key: _readArticleVersionsKey,
+        value: jsonEncode(current),
+      );
+      // Also update legacy key for compatibility
+      final legacySet = await getReadArticleIds();
+      legacySet.add(articleId);
+      await _secureStorage.write(
+        key: _readArticlesKey,
+        value: jsonEncode(legacySet.toList()),
+      );
     } catch (e) {
       debugPrint('Error marking article read: $e');
     }

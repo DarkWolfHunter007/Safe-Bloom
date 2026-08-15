@@ -7,6 +7,8 @@ class Article {
   final String content;
   final String? sourceUrl;
   final String? imageUrl;
+  final int version;
+  final String? updatedAt;
 
   Article({
     required this.id,
@@ -17,6 +19,8 @@ class Article {
     required this.content,
     this.sourceUrl,
     this.imageUrl,
+    this.version = 1,
+    this.updatedAt,
   });
 
   Map<String, dynamic> toMap() {
@@ -29,6 +33,8 @@ class Article {
       'content': content,
       'sourceUrl': sourceUrl,
       'imageUrl': imageUrl,
+      'version': version,
+      'updatedAt': updatedAt,
     };
   }
 
@@ -38,6 +44,10 @@ class Article {
     final String fallbackId = 'art_${category}_$title'
         .toLowerCase()
         .replaceAll(RegExp(r'[^a-z0-9_]'), '_');
+
+    final parsedVersion = map['version'] != null
+        ? (int.tryParse(map['version'].toString()) ?? 1)
+        : 1;
 
     return Article(
       id: (map['id'] != null && map['id'].toString().isNotEmpty)
@@ -50,6 +60,8 @@ class Article {
       content: map['content'] ?? '',
       sourceUrl: map['sourceUrl'] ?? map['source_url'],
       imageUrl: map['imageUrl'] ?? map['image_url'],
+      version: parsedVersion,
+      updatedAt: map['updatedAt'] ?? map['updated_at'],
     );
   }
 }

@@ -20,7 +20,7 @@ class InsightsViewState extends State<InsightsView> {
   String _selectedCategory = 'All';
   bool _isLoadingArticles = true;
   List<Article> _articles = <Article>[];
-  Set<String> _readArticleIds = <String>{};
+  Map<String, int> _readArticleVersions = <String, int>{};
 
   @override
   void initState() {
@@ -33,19 +33,26 @@ class InsightsViewState extends State<InsightsView> {
     _loadArticles();
   }
 
+  bool _isArticleNew(Article a) => !_readArticleVersions.containsKey(a.id);
+  bool _isArticleUpdated(Article a) =>
+      _readArticleVersions.containsKey(a.id) &&
+      _readArticleVersions[a.id]! < a.version;
+  bool _isUnreadOrUpdated(Article a) =>
+      _isArticleNew(a) || _isArticleUpdated(a);
+
   Future<void> _loadArticles({bool forceRefresh = false}) async {
     setState(() => _isLoadingArticles = true);
     try {
       final List<Article> fetched =
           await ArticleService.instance.getArticles(forceRefresh: forceRefresh);
-      final Set<String> readIds =
-          await ArticleService.instance.getReadArticleIds();
+      final Map<String, int> readVersions =
+          await ArticleService.instance.getReadArticleVersions();
       if (mounted) {
         final unreadCount =
-            fetched.where((a) => !readIds.contains(a.id)).length;
+            fetched.where((a) => !_readArticleVersions.containsKey(a.id) || _readArticleVersions[a.id]! < a.version).length;
         setState(() {
           _articles = List<Article>.from(fetched);
-          _readArticleIds = readIds;
+          _readArticleVersions = readVersions;
           _isLoadingArticles = false;
           _selectedCategory = unreadCount > 0 ? 'NEW' : 'All';
         });
@@ -61,13 +68,14 @@ class InsightsViewState extends State<InsightsView> {
       }
     } catch (e) {
       if (mounted) {
-        final Set<String> readIds =
-            await ArticleService.instance.getReadArticleIds();
-        final unreadCount =
-            ArticleService.fallbackArticles.where((a) => !readIds.contains(a.id)).length;
+        final Map<String, int> readVersions =
+            await ArticleService.instance.getReadArticleVersions();
+        final unreadCount = ArticleService.fallbackArticles
+            .where((a) => !readVersions.containsKey(a.id) || readVersions[a.id]! < a.version)
+            .length;
         setState(() {
           _articles = List<Article>.from(ArticleService.fallbackArticles);
-          _readArticleIds = readIds;
+          _readArticleVersions = readVersions;
           _isLoadingArticles = false;
           _selectedCategory = unreadCount > 0 ? 'NEW' : 'All';
         });
@@ -84,15 +92,15 @@ class InsightsViewState extends State<InsightsView> {
     }
   }
 
-  Future<void> _markAsRead(String articleId) async {
-    if (!_readArticleIds.contains(articleId)) {
-      await ArticleService.instance.markArticleAsRead(articleId);
+  Future<void> _markAsRead(Article article) async {
+    if (_isUnreadOrUpdated(article)) {
+      await ArticleService.instance.markArticleAsRead(article.id, article.version);
       if (mounted) {
         setState(() {
-          _readArticleIds.add(articleId);
+          _readArticleVersions[article.id] = article.version;
           // If we were on the NEW tab and no unread articles remain, switch back to 'All'
           final unreadRemaining =
-              _articles.where((a) => !_readArticleIds.contains(a.id)).length;
+              _articles.where((a) => _isUnreadOrUpdated(a)).length;
           if (_selectedCategory == 'NEW' && unreadRemaining == 0) {
             _selectedCategory = 'All';
           }
@@ -102,8 +110,8 @@ class InsightsViewState extends State<InsightsView> {
   }
 
   void _showArticleDetails(Article article) {
-    // Mark as read as soon as user opens the article
-    _markAsRead(article.id);
+    // Mark as read at current version as soon as user opens article
+    _markAsRead(article);
 
     showModalBottomSheet(
       context: context,
@@ -201,9 +209,9 @@ class InsightsViewState extends State<InsightsView> {
 
   @override
   Widget build(BuildContext context) {
-    // 1. Calculate unread articles
+    // 1. Calculate unread/updated articles
     final unreadArticles =
-        _articles.where((a) => !_readArticleIds.contains(a.id)).toList();
+        _articles.where((a) => _isUnreadOrUpdated(a)).toList();
 
     // 2. Build dynamic category list directly from current articles payload
     final Set<String> categoriesSet =
@@ -234,10 +242,10 @@ class InsightsViewState extends State<InsightsView> {
           _articles.where((a) => a.category == _selectedCategory).toList();
     }
 
-    // 5. Always sort so unread NEW articles appear FIRST at the top of the section
+    // 5. Always sort so unread/updated articles appear FIRST at the top of the section
     filteredArticles.sort((a, b) {
-      final aIsUnread = !_readArticleIds.contains(a.id);
-      final bIsUnread = !_readArticleIds.contains(b.id);
+      final aIsUnread = _isUnreadOrUpdated(a);
+      final bIsUnread = _isUnreadOrUpdated(b);
       if (aIsUnread && !bIsUnread) return -1;
       if (!aIsUnread && bIsUnread) return 1;
       return 0;
@@ -336,17 +344,23 @@ class InsightsViewState extends State<InsightsView> {
           else
             // Article Cards List
             ...filteredArticles.map((article) {
-              final isUnread = !_readArticleIds.contains(article.id);
+              final isUnread = _isArticleNew(article);
+              final isUpdated = _isArticleUpdated(article);
+              final isUnreadOrUpdated = isUnread || isUpdated;
+              final badgeLabel = isUpdated ? 'UPDATED' : 'NEW';
+
               return Container(
                 margin: const EdgeInsets.only(bottom: AppSpacing.md),
                 decoration: BoxDecoration(
                   color: AppColors.lightCardBackground,
                   borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                   border: Border.all(
-                    color: isUnread
-                        ? AppColors.dropCoral.withValues(alpha: 0.5)
+                    color: isUnreadOrUpdated
+                        ? (isUpdated
+                            ? Colors.deepPurpleAccent.withValues(alpha: 0.5)
+                            : AppColors.dropCoral.withValues(alpha: 0.5))
                         : AppColors.lightCardBorder,
-                    width: isUnread ? 1.5 : 1.0,
+                    width: isUnreadOrUpdated ? 1.5 : 1.0,
                   ),
                   boxShadow: [
                     BoxShadow(
@@ -382,17 +396,19 @@ class InsightsViewState extends State<InsightsView> {
                                         color: AppColors.petalRose, fontSize: 9),
                                   ),
                                 ),
-                                if (isUnread) ...[
+                                if (isUnreadOrUpdated) ...[
                                   const SizedBox(width: AppSpacing.xs),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: AppColors.dropCoral,
+                                      color: isUpdated
+                                          ? Colors.deepPurpleAccent
+                                          : AppColors.dropCoral,
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Text(
-                                      'NEW',
+                                      badgeLabel,
                                       style: AppTypography.brandTagline(
                                           color: Colors.white, fontSize: 8),
                                     ),
