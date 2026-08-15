@@ -252,8 +252,13 @@ class _InsightsViewState extends State<InsightsView> {
                 return Padding(
                   padding: const EdgeInsets.only(right: AppSpacing.xs),
                   child: ChoiceChip(
+                    showCheckmark: false,
                     avatar: isNewTab
-                        ? const Icon(Icons.auto_awesome, size: 14, color: Colors.white)
+                        ? Icon(
+                            Icons.auto_awesome,
+                            size: 14,
+                            color: isSelected ? Colors.white : AppColors.petalRose,
+                          )
                         : null,
                     label: Text(
                       cat,
