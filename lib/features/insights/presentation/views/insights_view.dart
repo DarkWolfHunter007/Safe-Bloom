@@ -13,10 +13,10 @@ class InsightsView extends StatefulWidget {
   const InsightsView({super.key, this.chartsKey});
 
   @override
-  State<InsightsView> createState() => _InsightsViewState();
+  State<InsightsView> createState() => InsightsViewState();
 }
 
-class _InsightsViewState extends State<InsightsView> {
+class InsightsViewState extends State<InsightsView> {
   String _selectedCategory = 'All';
   bool _isLoadingArticles = true;
   List<Article> _articles = <Article>[];
@@ -28,6 +28,11 @@ class _InsightsViewState extends State<InsightsView> {
     _loadArticles();
   }
 
+  void refresh() {
+    widget.chartsKey?.currentState?.refresh();
+    _loadArticles();
+  }
+
   Future<void> _loadArticles({bool forceRefresh = false}) async {
     setState(() => _isLoadingArticles = true);
     try {
@@ -36,10 +41,13 @@ class _InsightsViewState extends State<InsightsView> {
       final Set<String> readIds =
           await ArticleService.instance.getReadArticleIds();
       if (mounted) {
+        final unreadCount =
+            fetched.where((a) => !readIds.contains(a.id)).length;
         setState(() {
           _articles = List<Article>.from(fetched);
           _readArticleIds = readIds;
           _isLoadingArticles = false;
+          _selectedCategory = unreadCount > 0 ? 'NEW' : 'All';
         });
         if (forceRefresh) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -55,10 +63,13 @@ class _InsightsViewState extends State<InsightsView> {
       if (mounted) {
         final Set<String> readIds =
             await ArticleService.instance.getReadArticleIds();
+        final unreadCount =
+            ArticleService.fallbackArticles.where((a) => !readIds.contains(a.id)).length;
         setState(() {
           _articles = List<Article>.from(ArticleService.fallbackArticles);
           _readArticleIds = readIds;
           _isLoadingArticles = false;
+          _selectedCategory = unreadCount > 0 ? 'NEW' : 'All';
         });
         if (forceRefresh) {
           ScaffoldMessenger.of(context).showSnackBar(

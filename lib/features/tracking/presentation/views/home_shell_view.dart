@@ -19,6 +19,7 @@ class _HomeShellViewState extends State<HomeShellView> {
   final GlobalKey<TodayViewState> _todayKey = GlobalKey<TodayViewState>();
   final GlobalKey<CalendarViewState> _calendarKey = GlobalKey<CalendarViewState>();
   final GlobalKey<CycleChartsWidgetState> _chartsKey = GlobalKey<CycleChartsWidgetState>();
+  final GlobalKey<InsightsViewState> _insightsKey = GlobalKey<InsightsViewState>();
   final GlobalKey<SettingsViewState> _settingsKey = GlobalKey<SettingsViewState>();
 
   void _onTabTapped(int index) {
@@ -29,7 +30,7 @@ class _HomeShellViewState extends State<HomeShellView> {
     } else if (index == 1) {
       _calendarKey.currentState?.refresh();
     } else if (index == 2) {
-      _chartsKey.currentState?.refresh();
+      _insightsKey.currentState?.refresh();
     } else if (index == 3) {
       _settingsKey.currentState?.refresh();
     }
@@ -45,7 +46,7 @@ class _HomeShellViewState extends State<HomeShellView> {
           children: [
             TodayView(key: _todayKey),
             CalendarView(key: _calendarKey),
-            InsightsView(chartsKey: _chartsKey),
+            InsightsView(key: _insightsKey, chartsKey: _chartsKey),
             SettingsView(key: _settingsKey),
           ],
         ),
