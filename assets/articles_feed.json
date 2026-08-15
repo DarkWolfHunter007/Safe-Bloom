@@ -1,0 +1,54 @@
+[
+  {
+    "id": "art_ovulation_fitness",
+    "title": "Optimizing High-Intensity Workouts in Ovulation",
+    "category": "Fitness",
+    "readTime": "3 min read",
+    "phase": "Ovulation",
+    "content": "During your ovulation window, estrogen peaks along with testosterone. This creates ideal conditions for strength gains, HIIT, and personal records! Leverage high energy levels while focusing on proper joint stability.",
+    "sourceUrl": "https://www.healthline.com/health/fitness-exercise/cycle-syncing-workout"
+  },
+  {
+    "id": "art_follicular_nutrition",
+    "title": "Hormone Balancing Diet & Antioxidants",
+    "category": "Nutrition",
+    "readTime": "4 min read",
+    "phase": "Follicular",
+    "content": "Support follicle development with healthy fats, avocado, salmon, and vibrant berries. As your body prepares for ovulation, keep hydration high and include fermented foods like kimchi or kefir for gut health.",
+    "sourceUrl": "https://www.medicalnewstoday.com/articles/cycle-syncing-food"
+  },
+  {
+    "id": "art_luteal_sleep",
+    "title": "Managing PMS & Luteal Phase Sleep Quality",
+    "category": "Mind & Sleep",
+    "readTime": "5 min read",
+    "phase": "Luteal",
+    "content": "Progesterone rises during the luteal phase, slightly elevating core body temperature. Sleep in a cooler room (65–68°F) to optimize deep REM sleep and reduce pre-menstrual restlessness.",
+    "sourceUrl": "https://www.sleepfoundation.org/women-sleep/pms-and-sleep"
+  },
+  {
+    "id": "art_menstrual_iron",
+    "title": "Iron Replenishment During Your Period",
+    "category": "Nutrition",
+    "readTime": "2 min read",
+    "phase": "Menstrual",
+    "content": "Prioritize iron-rich foods combined with Vitamin C (like spinach with lemon juice or lentils with bell peppers) to support energy levels and compensate for menstrual blood loss.",
+    "sourceUrl": "https://www.hopkinsmedicine.org/health/wellness-and-prevention/anemia-and-menstruation"
+  },
+  {
+    "id": "art_follicular_creativity",
+    "title": "Harnessing High Energy & Brain Focus in Follicular Phase",
+    "category": "Mind & Sleep",
+    "readTime": "3 min read",
+    "phase": "Follicular",
+    "content": "Rising estrogen levels during the follicular phase boost brain neuroplasticity and dopamine. Use this phase for planning new projects, brainstorming sessions, and social gatherings."
+  },
+  {
+    "id": "art_luteal_magnesium",
+    "title": "Magnesium & Cramp Relief in Luteal Phase",
+    "category": "Nutrition",
+    "readTime": "4 min read",
+    "phase": "Luteal",
+    "content": "Magnesium glycinate or citrate helps relax uterine smooth muscle, relieving pre-period cramps and reducing fluid retention. Include dark chocolate, pumpkin seeds, and leafy greens."
+  }
+]

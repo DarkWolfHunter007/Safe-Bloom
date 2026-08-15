@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
-
+import 'package:safe_bloom/features/insights/data/services/article_service.dart';
+import 'package:safe_bloom/features/insights/domain/entities/article.dart';
 import '../widgets/cycle_charts_widget.dart';
 
 class InsightsView extends StatefulWidget {
@@ -15,46 +17,40 @@ class InsightsView extends StatefulWidget {
 
 class _InsightsViewState extends State<InsightsView> {
   String _selectedCategory = 'All';
+  bool _isLoadingArticles = true;
+  List<Article> _articles = [];
 
-  final List<Map<String, String>> _articles = const [
-    {
-      'title': 'Optimizing High-Intensity Workouts in Ovulation',
-      'category': 'Fitness',
-      'readTime': '3 min read',
-      'phase': 'Ovulation',
-      'content':
-          'During your ovulation window, estrogen peaks along with testosterone. This creates ideal conditions for strength gains, HIIT, and personal records!',
-    },
-    {
-      'title': 'Hormone Balancing Diet & Antioxidants',
-      'category': 'Nutrition',
-      'readTime': '4 min read',
-      'phase': 'Follicular',
-      'content':
-          'Support follicle development with healthy fats, avocado, salmon, and vibrant berries. Keep hydration high as your body Prepares for ovulation.',
-    },
-    {
-      'title': 'Managing PMS & Luteal Phase Sleep Quality',
-      'category': 'Mind & Sleep',
-      'readTime': '5 min read',
-      'phase': 'Luteal',
-      'content':
-          'Progesterone rises during the luteal phase, slightly elevating core body temperature. Sleep in a cooler room (65-68°F) to optimize deep REM sleep.',
-    },
-    {
-      'title': 'Iron Replenishment During Your Period',
-      'category': 'Nutrition',
-      'readTime': '2 min read',
-      'phase': 'Menstrual',
-      'content':
-          'Prioritize iron-rich foods combined with Vitamin C (like spinach with lemon) to support energy during blood loss.',
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadArticles();
+  }
 
-  void _showArticleDetails(Map<String, String> article) {
+  Future<void> _loadArticles({bool forceRefresh = false}) async {
+    setState(() => _isLoadingArticles = true);
+    try {
+      final fetched = await ArticleService.instance.getArticles(forceRefresh: forceRefresh);
+      if (mounted) {
+        setState(() {
+          _articles = fetched;
+          _isLoadingArticles = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _articles = ArticleService.fallbackArticles;
+          _isLoadingArticles = false;
+        });
+      }
+    }
+  }
+
+  void _showArticleDetails(Article article) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.lightCardBackground,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppSpacing.radiusLg)),
       ),
@@ -63,6 +59,7 @@ class _InsightsViewState extends State<InsightsView> {
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -74,29 +71,53 @@ class _InsightsViewState extends State<InsightsView> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      article['category']!.toUpperCase(),
+                      article.category.toUpperCase(),
                       style: AppTypography.brandTagline(color: Colors.white, fontSize: 9),
                     ),
                   ),
                   Text(
-                    article['readTime']!,
+                    article.readTime,
                     style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
                   ),
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
-              Text(article['title']!, style: AppTypography.brandTitle(fontSize: 24)),
+              Text(article.title, style: AppTypography.brandTitle(fontSize: 24)),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'SYNCED WITH YOUR ${article['phase']!.toUpperCase()} PHASE',
+                'SYNCED WITH YOUR ${article.phase.toUpperCase()} PHASE',
                 style: AppTypography.brandTagline(color: AppColors.petalRose, fontSize: 10),
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                article['content']!,
+                article.content,
                 style: AppTypography.body(fontSize: 14, color: AppColors.textMain),
               ),
               const SizedBox(height: AppSpacing.xl),
+              if (article.sourceUrl != null && article.sourceUrl!.isNotEmpty) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.dropCoral,
+                      side: const BorderSide(color: AppColors.dropCoral),
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                    ),
+                    onPressed: () async {
+                      final uri = Uri.parse(article.sourceUrl!);
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      }
+                    },
+                    icon: const Icon(Icons.open_in_new, size: 16, color: AppColors.dropCoral),
+                    label: Text(
+                      'READ FULL ARTICLE ON WEB',
+                      style: AppTypography.brandTagline(color: AppColors.dropCoral, fontSize: 11),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+              ],
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -119,7 +140,7 @@ class _InsightsViewState extends State<InsightsView> {
   Widget build(BuildContext context) {
     final filteredArticles = _selectedCategory == 'All'
         ? _articles
-        : _articles.where((a) => a['category'] == _selectedCategory).toList();
+        : _articles.where((a) => a.category == _selectedCategory).toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -138,7 +159,17 @@ class _InsightsViewState extends State<InsightsView> {
           CycleChartsWidget(key: widget.chartsKey),
 
           const SizedBox(height: AppSpacing.lg),
-          Text('Cycle-Synced Articles', style: AppTypography.brandTitle(fontSize: 22)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Cycle-Synced Articles', style: AppTypography.brandTitle(fontSize: 22)),
+              IconButton(
+                icon: const Icon(Icons.sync, color: AppColors.dropCoral, size: 20),
+                tooltip: 'Sync latest articles from web',
+                onPressed: () => _loadArticles(forceRefresh: true),
+              ),
+            ],
+          ),
           const SizedBox(height: AppSpacing.xs),
 
           // Category Chips
@@ -170,65 +201,83 @@ class _InsightsViewState extends State<InsightsView> {
           ),
           const SizedBox(height: AppSpacing.md),
 
-          // Article Cards List
-          ...filteredArticles.map((article) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: AppSpacing.md),
-              decoration: BoxDecoration(
-                color: AppColors.lightCardBackground,
-                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                border: Border.all(color: AppColors.lightCardBorder),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.02),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  )
-                ],
+          if (_isLoadingArticles)
+            const Padding(
+              padding: EdgeInsets.all(AppSpacing.lg),
+              child: Center(
+                child: CircularProgressIndicator(color: AppColors.dropCoral),
               ),
-              child: InkWell(
-                onTap: () => _showArticleDetails(article),
-                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppColors.petalRose.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              article['category']!.toUpperCase(),
-                              style: AppTypography.brandTagline(color: AppColors.petalRose, fontSize: 9),
-                            ),
-                          ),
-                          Text(
-                            article['readTime']!,
-                            style: AppTypography.body(fontSize: 11, color: AppColors.textMuted),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(article['title']!, style: AppTypography.brandTitle(fontSize: 18)),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        article['content']!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
-                      ),
-                    ],
-                  ),
+            )
+          else if (filteredArticles.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Center(
+                child: Text(
+                  'No articles found for $_selectedCategory',
+                  style: AppTypography.body(color: AppColors.textMuted),
                 ),
               ),
-            );
-          }),
+            )
+          else
+            // Article Cards List
+            ...filteredArticles.map((article) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: AppColors.lightCardBackground,
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                  border: Border.all(color: AppColors.lightCardBorder),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    )
+                  ],
+                ),
+                child: InkWell(
+                  onTap: () => _showArticleDetails(article),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.petalRose.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                article.category.toUpperCase(),
+                                style: AppTypography.brandTagline(color: AppColors.petalRose, fontSize: 9),
+                              ),
+                            ),
+                            Text(
+                              article.readTime,
+                              style: AppTypography.body(fontSize: 11, color: AppColors.textMuted),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(article.title, style: AppTypography.brandTitle(fontSize: 18)),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          article.content,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
         ],
       ),
     );
