@@ -13,7 +13,7 @@ class ArticleService {
   
   /// Public or Secret Raw Gist / JSON feed URL for dynamic daily articles.
   static String feedUrl =
-      'https://raw.githubusercontent.com/DarkWolfHunter007/Safe-Bloom/main/assets/articles_feed.json';
+      'https://gist.githubusercontent.com/DarkWolfHunter007/7e69dbfcc1f5e5ef06662d0e7eeed7a4/raw/articles_feed.json';
 
   ArticleService._init();
 
