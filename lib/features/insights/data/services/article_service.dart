@@ -103,9 +103,16 @@ class ArticleService {
     // 1. Try remote fetch if forced OR if 24 hours have passed since last update
     if (forceRefresh || stale) {
       try {
+        // Cache-busting query param to bypass GitHub CDN caching on force refresh
+        final cacheBustUrl = forceRefresh
+            ? '$targetUrl?t=${DateTime.now().millisecondsSinceEpoch}'
+            : targetUrl;
         final response = await http
-            .get(Uri.parse(targetUrl))
-            .timeout(const Duration(seconds: 4));
+            .get(
+              Uri.parse(cacheBustUrl),
+              headers: {'Cache-Control': 'no-cache, no-store, must-revalidate'},
+            )
+            .timeout(const Duration(seconds: 6));
 
         if (response.statusCode == 200) {
           final List<dynamic> jsonList = jsonDecode(response.body);

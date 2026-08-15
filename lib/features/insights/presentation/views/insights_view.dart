@@ -35,6 +35,15 @@ class _InsightsViewState extends State<InsightsView> {
           _articles = List<Article>.from(fetched);
           _isLoadingArticles = false;
         });
+        if (forceRefresh) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Articles refreshed live from Gist!'),
+              duration: Duration(seconds: 2),
+              backgroundColor: AppColors.dropCoral,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
