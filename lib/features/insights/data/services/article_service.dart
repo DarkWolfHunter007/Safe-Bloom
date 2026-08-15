@@ -18,7 +18,7 @@ class ArticleService {
   ArticleService._init();
 
   /// Default curated built-in articles (fallback offline library)
-  static final List<Article> fallbackArticles = [
+  static final List<Article> fallbackArticles = <Article>[
     Article(
       id: 'art_ovulation_fitness',
       title: 'Optimizing High-Intensity Workouts in Ovulation',
@@ -94,9 +94,9 @@ class ArticleService {
 
       if (response.statusCode == 200) {
         final List<dynamic> jsonList = jsonDecode(response.body);
-        final articles = jsonList
-            .map((item) => Article.fromMap(Map<String, dynamic>.from(item)))
-            .toList();
+        final List<Article> articles = List<Article>.from(
+          jsonList.map((item) => Article.fromMap(Map<String, dynamic>.from(item))),
+        );
 
         if (articles.isNotEmpty) {
           // Cache successful network payload
@@ -116,9 +116,9 @@ class ArticleService {
       final cachedJson = await _secureStorage.read(key: _cacheKey);
       if (cachedJson != null && cachedJson.isNotEmpty) {
         final List<dynamic> jsonList = jsonDecode(cachedJson);
-        final cachedArticles = jsonList
-            .map((item) => Article.fromMap(Map<String, dynamic>.from(item)))
-            .toList();
+        final List<Article> cachedArticles = List<Article>.from(
+          jsonList.map((item) => Article.fromMap(Map<String, dynamic>.from(item))),
+        );
         if (cachedArticles.isNotEmpty) {
           return cachedArticles;
         }
@@ -128,6 +128,6 @@ class ArticleService {
     }
 
     // 3. Fallback to built-in curated library
-    return fallbackArticles;
+    return List<Article>.from(fallbackArticles);
   }
 }

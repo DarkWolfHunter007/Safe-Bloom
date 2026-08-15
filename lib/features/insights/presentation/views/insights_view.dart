@@ -18,7 +18,7 @@ class InsightsView extends StatefulWidget {
 class _InsightsViewState extends State<InsightsView> {
   String _selectedCategory = 'All';
   bool _isLoadingArticles = true;
-  List<Article> _articles = [];
+  List<Article> _articles = <Article>[];
 
   @override
   void initState() {
@@ -29,17 +29,17 @@ class _InsightsViewState extends State<InsightsView> {
   Future<void> _loadArticles({bool forceRefresh = false}) async {
     setState(() => _isLoadingArticles = true);
     try {
-      final fetched = await ArticleService.instance.getArticles(forceRefresh: forceRefresh);
+      final List<Article> fetched = await ArticleService.instance.getArticles(forceRefresh: forceRefresh);
       if (mounted) {
         setState(() {
-          _articles = fetched;
+          _articles = List<Article>.from(fetched);
           _isLoadingArticles = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _articles = ArticleService.fallbackArticles;
+          _articles = List<Article>.from(ArticleService.fallbackArticles);
           _isLoadingArticles = false;
         });
       }
