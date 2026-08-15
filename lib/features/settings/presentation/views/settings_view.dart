@@ -74,10 +74,12 @@ class SettingsViewState extends State<SettingsView>
           _isLoadingBiometricSetting = false;
           _isLoading = false;
         });
+        _shimmerController.stop();
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
+        _shimmerController.stop();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to load profile settings: $e'),
