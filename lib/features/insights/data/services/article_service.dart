@@ -157,4 +157,36 @@ class ArticleService {
     // 3. Fallback to built-in curated library
     return List<Article>.from(fallbackArticles);
   }
+
+  static const String _readArticlesKey = 'read_article_ids_json';
+
+  /// Returns set of article IDs that user has read
+  Future<Set<String>> getReadArticleIds() async {
+    try {
+      final jsonStr = await _secureStorage.read(key: _readArticlesKey);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(jsonStr);
+        return list.map((e) => e.toString()).toSet();
+      }
+    } catch (e) {
+      debugPrint('Error reading read article IDs: $e');
+    }
+    return {};
+  }
+
+  /// Marks an article ID as read in local secure storage
+  Future<void> markArticleAsRead(String articleId) async {
+    try {
+      final current = await getReadArticleIds();
+      if (!current.contains(articleId)) {
+        current.add(articleId);
+        await _secureStorage.write(
+          key: _readArticlesKey,
+          value: jsonEncode(current.toList()),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error marking article read: $e');
+    }
+  }
 }
