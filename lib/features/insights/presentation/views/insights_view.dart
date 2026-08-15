@@ -82,7 +82,7 @@ class _InsightsViewState extends State<InsightsView> {
           // If we were on the NEW tab and no unread articles remain, switch back to 'All'
           final unreadRemaining =
               _articles.where((a) => !_readArticleIds.contains(a.id)).length;
-          if (_selectedCategory.startsWith('NEW') && unreadRemaining == 0) {
+          if (_selectedCategory == 'NEW' && unreadRemaining == 0) {
             _selectedCategory = 'All';
           }
         });
@@ -202,20 +202,19 @@ class _InsightsViewState extends State<InsightsView> {
     // 3. Assemble complete Category Choice Chips List
     final List<String> availableCategories = [];
     if (unreadArticles.isNotEmpty) {
-      availableCategories.add('NEW (${unreadArticles.length})');
+      availableCategories.add('NEW');
     }
     availableCategories.add('All');
     availableCategories.addAll(dynamicCategories);
 
     // Ensure selected category is valid
-    if (!availableCategories.contains(_selectedCategory) &&
-        !_selectedCategory.startsWith('NEW')) {
+    if (!availableCategories.contains(_selectedCategory)) {
       _selectedCategory = 'All';
     }
 
     // 4. Filter articles based on selected category tab
     final List<Article> filteredArticles;
-    if (_selectedCategory.startsWith('NEW')) {
+    if (_selectedCategory == 'NEW') {
       filteredArticles = List<Article>.from(unreadArticles);
     } else if (_selectedCategory == 'All') {
       filteredArticles = List<Article>.from(_articles);
@@ -269,7 +268,8 @@ class _InsightsViewState extends State<InsightsView> {
             child: Row(
               children: availableCategories.map((cat) {
                 final isSelected = _selectedCategory == cat;
-                final isNewTab = cat.startsWith('NEW');
+                final isNewTab = cat == 'NEW';
+                final labelText = isNewTab ? 'NEW (${unreadArticles.length})' : cat;
                 return Padding(
                   padding: const EdgeInsets.only(right: AppSpacing.xs),
                   child: ChoiceChip(
@@ -282,7 +282,7 @@ class _InsightsViewState extends State<InsightsView> {
                           )
                         : null,
                     label: Text(
-                      cat,
+                      labelText,
                       style: AppTypography.body(
                         fontSize: 12,
                         color: isSelected

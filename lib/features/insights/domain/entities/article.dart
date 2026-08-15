@@ -33,10 +33,18 @@ class Article {
   }
 
   factory Article.fromMap(Map<String, dynamic> map) {
+    final title = map['title']?.toString() ?? '';
+    final category = map['category']?.toString() ?? 'General';
+    final String fallbackId = 'art_${category}_$title'
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9_]'), '_');
+
     return Article(
-      id: map['id']?.toString() ?? map['title'].hashCode.toString(),
-      title: map['title'] ?? '',
-      category: map['category'] ?? 'General',
+      id: (map['id'] != null && map['id'].toString().isNotEmpty)
+          ? map['id'].toString()
+          : fallbackId,
+      title: title,
+      category: category,
       readTime: map['readTime'] ?? map['read_time'] ?? '3 min read',
       phase: map['phase'] ?? 'All',
       content: map['content'] ?? '',
