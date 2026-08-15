@@ -9,10 +9,10 @@ class ArticleService {
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   static const String _cacheKey = 'cached_insights_articles';
+  static const String _lastFetchKey = 'last_articles_fetch_timestamp';
   
-  /// Public URL feed for remote cycle-synced articles (JSON format).
-  /// Users/developers can point this to GitHub Pages, Gist, or custom CMS endpoint.
-  static const String defaultFeedUrl =
+  /// Public or Secret Raw Gist / JSON feed URL for dynamic daily articles.
+  static String feedUrl =
       'https://raw.githubusercontent.com/DarkWolfHunter007/Safe-Bloom/main/assets/articles_feed.json';
 
   ArticleService._init();
@@ -79,36 +79,56 @@ class ArticleService {
     ),
   ];
 
-  /// Fetches articles from remote JSON feed with fallback to local secure cache & built-in library.
+  /// Checks whether local cache is older than 24 hours
+  Future<bool> isCacheStale() async {
+    try {
+      final lastFetchStr = await _secureStorage.read(key: _lastFetchKey);
+      if (lastFetchStr == null) return true;
+      final lastFetch = DateTime.tryParse(lastFetchStr);
+      if (lastFetch == null) return true;
+      return DateTime.now().difference(lastFetch).inHours >= 24;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Fetches articles from Gist/Remote JSON feed with 24-hour auto-refresh & local cache fallback.
   Future<List<Article>> getArticles({
-    String? feedUrl,
+    String? customFeedUrl,
     bool forceRefresh = false,
   }) async {
-    final targetUrl = feedUrl ?? defaultFeedUrl;
+    final targetUrl = customFeedUrl ?? feedUrl;
+    final stale = await isCacheStale();
 
-    // 1. Try remote fetch if network is available
-    try {
-      final response = await http
-          .get(Uri.parse(targetUrl))
-          .timeout(const Duration(seconds: 4));
+    // 1. Try remote fetch if forced OR if 24 hours have passed since last update
+    if (forceRefresh || stale) {
+      try {
+        final response = await http
+            .get(Uri.parse(targetUrl))
+            .timeout(const Duration(seconds: 4));
 
-      if (response.statusCode == 200) {
-        final List<dynamic> jsonList = jsonDecode(response.body);
-        final List<Article> articles = List<Article>.from(
-          jsonList.map((item) => Article.fromMap(Map<String, dynamic>.from(item))),
-        );
-
-        if (articles.isNotEmpty) {
-          // Cache successful network payload
-          await _secureStorage.write(
-            key: _cacheKey,
-            value: jsonEncode(articles.map((a) => a.toMap()).toList()),
+        if (response.statusCode == 200) {
+          final List<dynamic> jsonList = jsonDecode(response.body);
+          final List<Article> articles = List<Article>.from(
+            jsonList.map((item) => Article.fromMap(Map<String, dynamic>.from(item))),
           );
-          return articles;
+
+          if (articles.isNotEmpty) {
+            // Cache successful network payload & timestamp
+            await _secureStorage.write(
+              key: _cacheKey,
+              value: jsonEncode(articles.map((a) => a.toMap()).toList()),
+            );
+            await _secureStorage.write(
+              key: _lastFetchKey,
+              value: DateTime.now().toIso8601String(),
+            );
+            return articles;
+          }
         }
+      } catch (e) {
+        debugPrint('Remote articles fetch failed or timed out ($e). Reading local cache.');
       }
-    } catch (e) {
-      debugPrint('Remote articles fetch failed or timed out ($e). Checking cache.');
     }
 
     // 2. Fallback to local secure storage cache
