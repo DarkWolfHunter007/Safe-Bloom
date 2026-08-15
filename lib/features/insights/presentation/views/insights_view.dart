@@ -44,7 +44,7 @@ class _InsightsViewState extends State<InsightsView> {
         if (forceRefresh) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Articles refreshed live from Gist!'),
+              content: Text('Articles refreshed live!'),
               duration: Duration(seconds: 2),
               backgroundColor: AppColors.dropCoral,
             ),
@@ -53,10 +53,22 @@ class _InsightsViewState extends State<InsightsView> {
       }
     } catch (e) {
       if (mounted) {
+        final Set<String> readIds =
+            await ArticleService.instance.getReadArticleIds();
         setState(() {
           _articles = List<Article>.from(ArticleService.fallbackArticles);
+          _readArticleIds = readIds;
           _isLoadingArticles = false;
         });
+        if (forceRefresh) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No internet connection. Displaying offline articles.'),
+              duration: Duration(seconds: 3),
+              backgroundColor: Colors.orangeAccent,
+            ),
+          );
+        }
       }
     }
   }
@@ -204,13 +216,22 @@ class _InsightsViewState extends State<InsightsView> {
     // 4. Filter articles based on selected category tab
     final List<Article> filteredArticles;
     if (_selectedCategory.startsWith('NEW')) {
-      filteredArticles = unreadArticles;
+      filteredArticles = List<Article>.from(unreadArticles);
     } else if (_selectedCategory == 'All') {
-      filteredArticles = _articles;
+      filteredArticles = List<Article>.from(_articles);
     } else {
       filteredArticles =
           _articles.where((a) => a.category == _selectedCategory).toList();
     }
+
+    // 5. Always sort so unread NEW articles appear FIRST at the top of the section
+    filteredArticles.sort((a, b) {
+      final aIsUnread = !_readArticleIds.contains(a.id);
+      final bIsUnread = !_readArticleIds.contains(b.id);
+      if (aIsUnread && !bIsUnread) return -1;
+      if (!aIsUnread && bIsUnread) return 1;
+      return 0;
+    });
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -235,7 +256,7 @@ class _InsightsViewState extends State<InsightsView> {
               Text('Cycle-Synced Articles', style: AppTypography.brandTitle(fontSize: 22)),
               IconButton(
                 icon: const Icon(Icons.sync, color: AppColors.dropCoral, size: 20),
-                tooltip: 'Sync latest articles from Gist',
+                tooltip: 'Sync latest health articles',
                 onPressed: () => _loadArticles(forceRefresh: true),
               ),
             ],

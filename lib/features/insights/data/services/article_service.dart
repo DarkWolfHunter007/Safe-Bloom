@@ -135,6 +135,9 @@ class ArticleService {
         }
       } catch (e) {
         debugPrint('Remote articles fetch failed or timed out ($e). Reading local cache.');
+        if (forceRefresh) {
+          rethrow;
+        }
       }
     }
 
