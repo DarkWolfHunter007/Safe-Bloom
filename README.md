@@ -187,7 +187,27 @@ flutter build apk --split-per-abi --release
 ## 📋 Changelog
 For a detailed breakdown of features, improvements, and fixes in each version, view our [Changelog](changelog/v1.0.0.md).
 
+## 👤 Author & Attribution
+Safe Bloom is created and maintained by **[DarkWolfHunter007](https://github.com/DarkWolfHunter007)**.
+
+If you use, fork, reference, or build upon this project in your own work, applications, or research, attribution to the original author (**DarkWolfHunter007**) is required under the terms of the MIT License.
+
 ---
 
 ## 📄 License
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+This project is open-source software licensed under the [MIT License](LICENSE).
+
+```
+Copyright (c) 2026 DarkWolfHunter007
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including attribution to
+the original author) shall be included in all copies or substantial portions of
+the Software.
+```
