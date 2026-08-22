@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:safe_bloom/features/insights/data/services/article_service.dart';
 import 'package:safe_bloom/features/insights/domain/entities/article.dart';
 
 void main() {
@@ -87,31 +89,85 @@ void main() {
       expect(parsed.first.title, equals('Valid Article'));
     });
 
-    test('24-hour cache staleness logic accurately calculates expiration', () {
-      final now = DateTime.now();
+    test('ArticleService markArticleAsRead and getReadArticleVersions persist and retrieve read states', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      final Map<String, String> mockStorage = {};
 
-      // Fresh cache (1 hour ago)
-      final recentFetch = now.subtract(const Duration(hours: 1));
-      final isFresh = now.difference(recentFetch).inHours < 24;
-      expect(isFresh, isTrue);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
+        (MethodCall call) async {
+          final args = call.arguments as Map<dynamic, dynamic>?;
+          final key = args?['key'] as String?;
+          final value = args?['value'] as String?;
+          switch (call.method) {
+            case 'read':
+              return mockStorage[key];
+            case 'write':
+              if (key != null && value != null) mockStorage[key] = value;
+              return null;
+            case 'delete':
+              if (key != null) mockStorage.remove(key);
+              return null;
+            case 'readAll':
+              return mockStorage;
+            default:
+              return null;
+          }
+        },
+      );
 
-      // Stale cache (25 hours ago)
-      final staleFetch = now.subtract(const Duration(hours: 25));
-      final isStale = now.difference(staleFetch).inHours >= 24;
-      expect(isStale, isTrue);
+      // Initially empty
+      final initial = await ArticleService.instance.getReadArticleVersions();
+      expect(initial, isEmpty);
+
+      // Mark article 1 as read at version 2
+      await ArticleService.instance.markArticleAsRead('art-follicular-energy', 2);
+      final after1 = await ArticleService.instance.getReadArticleVersions();
+      expect(after1['art-follicular-energy'], equals(2));
+
+      // Mark article 2 as read at version 1
+      await ArticleService.instance.markArticleAsRead('art-luteal-pms', 1);
+      final after2 = await ArticleService.instance.getReadArticleVersions();
+      expect(after2['art-follicular-energy'], equals(2));
+      expect(after2['art-luteal-pms'], equals(1));
     });
 
-    test('New article detection isolates unseen article IDs', () {
-      final knownIds = {'art-1', 'art-2', 'art-3'};
-      final incoming = [
-        Article(id: 'art-2', title: 'Art 2', category: 'General', readTime: '1 min', phase: 'All', content: 'C'),
-        Article(id: 'art-4', title: 'Art 4 (New)', category: 'General', readTime: '1 min', phase: 'All', content: 'C'),
-        Article(id: 'art-5', title: 'Art 5 (New)', category: 'General', readTime: '1 min', phase: 'All', content: 'C'),
-      ];
+    test('ArticleService isCacheStale returns false for fresh cache and true for stale cache', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      final Map<String, String> mockStorage = {};
 
-      final newArticles = incoming.where((a) => !knownIds.contains(a.id)).toList();
-      expect(newArticles.length, equals(2));
-      expect(newArticles.map((a) => a.id), containsAll(['art-4', 'art-5']));
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
+        (MethodCall call) async {
+          final args = call.arguments as Map<dynamic, dynamic>?;
+          final key = args?['key'] as String?;
+          final value = args?['value'] as String?;
+          switch (call.method) {
+            case 'read':
+              return mockStorage[key];
+            case 'write':
+              if (key != null && value != null) mockStorage[key] = value;
+              return null;
+            default:
+              return null;
+          }
+        },
+      );
+
+      // 1. No timestamp -> stale
+      expect(await ArticleService.instance.isCacheStale(), isTrue);
+
+      // 2. Fresh timestamp (2 hours ago) -> not stale
+      mockStorage['last_articles_fetch_timestamp'] =
+          DateTime.now().subtract(const Duration(hours: 2)).toIso8601String();
+      expect(await ArticleService.instance.isCacheStale(), isFalse);
+
+      // 3. Stale timestamp (26 hours ago) -> stale
+      mockStorage['last_articles_fetch_timestamp'] =
+          DateTime.now().subtract(const Duration(hours: 26)).toIso8601String();
+      expect(await ArticleService.instance.isCacheStale(), isTrue);
     });
   });
 }

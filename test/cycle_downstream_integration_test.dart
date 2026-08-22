@@ -204,7 +204,10 @@ void main() {
       expect(newPeriodAlert, isNotNull);
       final scheduledDateStr = newPeriodAlert!['scheduledDateTime'] as String;
       final expectedDate = genuineStart.add(const Duration(days: 26));
-      expect(scheduledDateStr.contains('${expectedDate.year}'), isTrue);
+      final parsedScheduled = DateTime.parse(scheduledDateStr);
+      expect(parsedScheduled.year, equals(expectedDate.year));
+      expect(parsedScheduled.month, equals(expectedDate.month));
+      expect(parsedScheduled.day, equals(expectedDate.day));
     });
 
     test('3. Mid-cycle spotting logged after a genuine period does not alter cycle anchor', () async {

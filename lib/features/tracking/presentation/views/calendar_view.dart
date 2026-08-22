@@ -14,15 +14,6 @@ import '../../domain/services/cycle_calculator.dart';
 import '../widgets/period_logger_sheet.dart';
 import '../widgets/historical_period_sheet.dart';
 
-enum CalendarDayStatus {
-  loggedPeriod,
-  predictedPeriod,
-  follicular,
-  ovulation,
-  luteal,
-  regular,
-}
-
 class CalendarView extends StatefulWidget {
   const CalendarView({super.key});
 
@@ -146,36 +137,14 @@ class CalendarViewState extends State<CalendarView> {
   }
 
   CalendarDayStatus _getDayStatus(DateTime date) {
-    final cleanDate = SafeBloomDateUtils.dateOnly(date);
-
-    if (_loggedPeriodDates.contains(cleanDate)) {
-      return CalendarDayStatus.loggedPeriod;
-    }
-
-    if (_predictedPeriodDates.contains(cleanDate)) {
-      return CalendarDayStatus.predictedPeriod;
-    }
-
-    final anchor = _getCycleAnchorForDate(cleanDate);
-    final cycleDay = CycleCalculator.getCurrentCycleDay(anchor, now: cleanDate);
-    final phase = CycleCalculator.getCyclePhase(
-      cycleDay,
-      avgCycleLength: _profile!.avgCycleLength,
-      avgPeriodLength: _profile!.avgPeriodLength,
+    if (_profile == null) return CalendarDayStatus.regular;
+    return CycleCalculator.resolveCalendarDayStatus(
+      date: date,
+      profile: _profile!,
+      loggedPeriodDates: _loggedPeriodDates,
+      predictedPeriodDates: _predictedPeriodDates,
+      sortedCycleStarts: _sortedCycleStarts,
     );
-
-    switch (phase) {
-      case CyclePhase.menstrual:
-        return CalendarDayStatus.regular;
-      case CyclePhase.follicular:
-        return CalendarDayStatus.follicular;
-      case CyclePhase.ovulation:
-        return CalendarDayStatus.ovulation;
-      case CyclePhase.luteal:
-        return CalendarDayStatus.luteal;
-      case CyclePhase.overdue:
-        return CalendarDayStatus.regular;
-    }
   }
 
   /// Single-tap on date cell: selects date cell, or selects end date if range mode is active

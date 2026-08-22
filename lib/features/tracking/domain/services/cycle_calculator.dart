@@ -1,5 +1,6 @@
 import 'package:safe_bloom/core/utils/cycle_group_utils.dart';
 import '../entities/period_entry.dart';
+import '../entities/user_profile.dart';
 
 enum CyclePhase {
   menstrual,
@@ -181,4 +182,66 @@ class CycleCalculator {
       'avgPeriodLength': avgPeriodLength.clamp(2, 10),
     };
   }
+
+  /// Resolves the comprehensive calendar day status for a given date.
+  static CalendarDayStatus resolveCalendarDayStatus({
+    required DateTime date,
+    required UserProfile profile,
+    required Set<DateTime> loggedPeriodDates,
+    required Set<DateTime> predictedPeriodDates,
+    List<DateTime> sortedCycleStarts = const [],
+  }) {
+    final cleanDate = DateTime(date.year, date.month, date.day);
+
+    // 1. CONFIRMED / LOGGED PERIOD (Highest priority)
+    if (loggedPeriodDates.contains(cleanDate)) {
+      return CalendarDayStatus.loggedPeriod;
+    }
+
+    // 2. PREDICTED PERIOD (Only if NOT explicitly logged by user)
+    if (predictedPeriodDates.contains(cleanDate)) {
+      return CalendarDayStatus.predictedPeriod;
+    }
+
+    // 3. Resolve cycle anchor for phase calculation
+    DateTime anchor = DateTime(profile.lastPeriodStart.year, profile.lastPeriodStart.month, profile.lastPeriodStart.day);
+    if (sortedCycleStarts.isNotEmpty) {
+      for (int i = sortedCycleStarts.length - 1; i >= 0; i--) {
+        final cycleStart = DateTime(sortedCycleStarts[i].year, sortedCycleStarts[i].month, sortedCycleStarts[i].day);
+        if (!cleanDate.isBefore(cycleStart)) {
+          anchor = cycleStart;
+          break;
+        }
+      }
+    }
+
+    final cycleDay = getCurrentCycleDay(anchor, now: cleanDate);
+    final phase = getCyclePhase(
+      cycleDay,
+      avgCycleLength: profile.avgCycleLength,
+      avgPeriodLength: profile.avgPeriodLength,
+    );
+
+    switch (phase) {
+      case CyclePhase.menstrual:
+        return CalendarDayStatus.regular;
+      case CyclePhase.follicular:
+        return CalendarDayStatus.follicular;
+      case CyclePhase.ovulation:
+        return CalendarDayStatus.ovulation;
+      case CyclePhase.luteal:
+        return CalendarDayStatus.luteal;
+      case CyclePhase.overdue:
+        return CalendarDayStatus.regular;
+    }
+  }
+}
+
+enum CalendarDayStatus {
+  loggedPeriod,
+  predictedPeriod,
+  follicular,
+  ovulation,
+  luteal,
+  regular,
 }

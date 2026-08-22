@@ -4,23 +4,12 @@ import 'package:safe_bloom/features/tracking/domain/entities/period_entry.dart';
 import 'package:safe_bloom/features/tracking/domain/entities/user_profile.dart';
 import 'package:safe_bloom/features/tracking/domain/services/cycle_calculator.dart';
 
-/// Helper mirroring CalendarView state resolution logic to test state rules directly.
-enum CalendarDayStatusTest {
-  loggedPeriod,
-  predictedPeriod,
-  follicular,
-  ovulation,
-  luteal,
-  regular,
-}
-
-CalendarDayStatusTest resolveDayStatus({
+CalendarDayStatus resolveDayStatus({
   required DateTime date,
   required UserProfile profile,
   required List<PeriodEntry> periodEntries,
+  List<DateTime> sortedCycleStarts = const [],
 }) {
-  final cleanDate = SafeBloomDateUtils.dateOnly(date);
-
   final loggedPeriodDates = periodEntries
       .map((p) => SafeBloomDateUtils.dateOnly(p.timestamp))
       .toSet();
@@ -31,37 +20,13 @@ CalendarDayStatusTest resolveDayStatus({
     avgPeriodLength: profile.avgPeriodLength,
   );
 
-  // 1. CONFIRMED / LOGGED PERIOD (Highest priority)
-  if (loggedPeriodDates.contains(cleanDate)) {
-    return CalendarDayStatusTest.loggedPeriod;
-  }
-
-  // 2. PREDICTED PERIOD (Only if NOT explicitly logged by user)
-  if (predictedPeriodDates.contains(cleanDate)) {
-    return CalendarDayStatusTest.predictedPeriod;
-  }
-
-  // 3. Cycle phase for non-period days
-  final cycleDay = CycleCalculator.getCurrentCycleDay(profile.lastPeriodStart, now: cleanDate);
-  final phase = CycleCalculator.getCyclePhase(
-    cycleDay,
-    avgCycleLength: profile.avgCycleLength,
-    avgPeriodLength: profile.avgPeriodLength,
+  return CycleCalculator.resolveCalendarDayStatus(
+    date: date,
+    profile: profile,
+    loggedPeriodDates: loggedPeriodDates,
+    predictedPeriodDates: predictedPeriodDates,
+    sortedCycleStarts: sortedCycleStarts,
   );
-
-  switch (phase) {
-    case CyclePhase.menstrual:
-      // Menstrual phase from raw cycleDay must NOT create a period event if unlogged and unpredicted
-      return CalendarDayStatusTest.regular;
-    case CyclePhase.follicular:
-      return CalendarDayStatusTest.follicular;
-    case CyclePhase.ovulation:
-      return CalendarDayStatusTest.ovulation;
-    case CyclePhase.luteal:
-      return CalendarDayStatusTest.luteal;
-    case CyclePhase.overdue:
-      return CalendarDayStatusTest.regular;
-  }
 }
 
 void main() {
@@ -80,7 +45,7 @@ void main() {
         periodEntries: [],
       );
 
-      expect(status, isNot(CalendarDayStatusTest.loggedPeriod));
+      expect(status, isNot(CalendarDayStatus.loggedPeriod));
     });
 
     test('Test 2 — Predicted period: Date in prediction window without PeriodEntry is predicted, not logged', () {
@@ -91,8 +56,8 @@ void main() {
         periodEntries: [],
       );
 
-      expect(status, CalendarDayStatusTest.predictedPeriod);
-      expect(status, isNot(CalendarDayStatusTest.loggedPeriod));
+      expect(status, CalendarDayStatus.predictedPeriod);
+      expect(status, isNot(CalendarDayStatus.loggedPeriod));
     });
 
     test('Test 3 — Logged period: Date with PeriodEntry is confirmed', () {
@@ -109,7 +74,7 @@ void main() {
         periodEntries: [entry],
       );
 
-      expect(status, CalendarDayStatusTest.loggedPeriod);
+      expect(status, CalendarDayStatus.loggedPeriod);
     });
 
     test('Test 4 — Logged + predicted: Confirmed takes precedence over predicted', () {
@@ -126,8 +91,8 @@ void main() {
         periodEntries: [entry],
       );
 
-      expect(status, CalendarDayStatusTest.loggedPeriod);
-      expect(status, isNot(CalendarDayStatusTest.predictedPeriod));
+      expect(status, CalendarDayStatus.loggedPeriod);
+      expect(status, isNot(CalendarDayStatus.predictedPeriod));
     });
 
     test('Test 5 — Delete logged period: Confirmed state disappears when entry deleted', () {
@@ -144,7 +109,7 @@ void main() {
         profile: testProfile,
         periodEntries: [entry],
       );
-      expect(statusBefore, CalendarDayStatusTest.loggedPeriod);
+      expect(statusBefore, CalendarDayStatus.loggedPeriod);
 
       // After deletion
       final statusAfter = resolveDayStatus(
@@ -152,7 +117,7 @@ void main() {
         profile: testProfile,
         periodEntries: [],
       );
-      expect(statusAfter, isNot(CalendarDayStatusTest.loggedPeriod));
+      expect(statusAfter, isNot(CalendarDayStatus.loggedPeriod));
     });
 
     test('Test 6 — Edit period: Changing period date updates confirmed calendar dates', () {
@@ -165,11 +130,11 @@ void main() {
 
       expect(
         resolveDayStatus(date: oldDate, profile: testProfile, periodEntries: initialEntries),
-        CalendarDayStatusTest.loggedPeriod,
+        CalendarDayStatus.loggedPeriod,
       );
       expect(
         resolveDayStatus(date: newDate, profile: testProfile, periodEntries: initialEntries),
-        isNot(CalendarDayStatusTest.loggedPeriod),
+        isNot(CalendarDayStatus.loggedPeriod),
       );
 
       // Update entry to new date
@@ -179,11 +144,11 @@ void main() {
 
       expect(
         resolveDayStatus(date: oldDate, profile: testProfile, periodEntries: updatedEntries),
-        isNot(CalendarDayStatusTest.loggedPeriod),
+        isNot(CalendarDayStatus.loggedPeriod),
       );
       expect(
         resolveDayStatus(date: newDate, profile: testProfile, periodEntries: updatedEntries),
-        CalendarDayStatusTest.loggedPeriod,
+        CalendarDayStatus.loggedPeriod,
       );
     });
 
@@ -206,8 +171,8 @@ void main() {
         );
 
         // All dates in period length window are PREDICTED, NONE are logged/confirmed!
-        expect(status, CalendarDayStatusTest.predictedPeriod);
-        expect(status, isNot(CalendarDayStatusTest.loggedPeriod));
+        expect(status, CalendarDayStatus.predictedPeriod);
+        expect(status, isNot(CalendarDayStatus.loggedPeriod));
       }
     });
 
@@ -229,7 +194,7 @@ void main() {
       final statusOvulation = resolveDayStatus(date: juneOvulationDate, profile: testProfile, periodEntries: allEntries);
 
       expect(juneOvulationDate.difference(juneStart).inDays + 1, 14);
-      expect(statusOvulation, isNot(CalendarDayStatusTest.loggedPeriod));
+      expect(statusOvulation, isNot(CalendarDayStatus.loggedPeriod));
     });
   });
 }
