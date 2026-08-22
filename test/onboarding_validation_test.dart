@@ -10,12 +10,14 @@ void main() {
       ),
     );
 
-    // Step 1: Welcome Screen -> Click CONTINUE
-    expect(find.text('Welcome to Safe Bloom'), findsOneWidget);
-    await tester.tap(find.text('CONTINUE'));
+    // Step 0: Welcome & Privacy Screen -> Click 'Start Fresh'
+    expect(find.byKey(const ValueKey('onboarding_start_fresh')), findsOneWidget);
+    expect(find.byKey(const ValueKey('onboarding_restore_vault')), findsOneWidget);
+    expect(find.text('256-Bit AES Hardware Encrypted'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('onboarding_start_fresh')));
     await tester.pumpAndSettle();
 
-    // Step 2: Last Period Start Date Screen
+    // Step 1: Last Period Start Date Screen
     expect(find.text('When did your last period start?'), findsOneWidget);
     expect(find.text('No Date Selected'), findsOneWidget);
 
@@ -23,7 +25,7 @@ void main() {
     await tester.tap(find.text('CONTINUE'));
     await tester.pump();
 
-    // Should remain on Step 2 and display validation SnackBar
+    // Should remain on Step 1 and display validation SnackBar
     expect(find.text('Please select when your last period started to continue.'), findsOneWidget);
     expect(find.text('When did your last period start?'), findsOneWidget);
 
@@ -44,7 +46,7 @@ void main() {
     expect(find.text('No Date Selected'), findsNothing);
     expect(find.text('CHANGE DATE'), findsOneWidget);
 
-    // Now tap CONTINUE -> Should successfully advance to Step 3 (Cycle Duration)
+    // Now tap CONTINUE -> Should successfully advance to Step 2 (Cycle Duration)
     await tester.tap(find.text('CONTINUE'));
     await tester.pumpAndSettle();
 
@@ -58,11 +60,11 @@ void main() {
       ),
     );
 
-    // Step 1: Welcome Screen -> Click CONTINUE
-    await tester.tap(find.text('CONTINUE'));
+    // Step 0: Start Fresh -> Click 'Start Fresh'
+    await tester.tap(find.byKey(const ValueKey('onboarding_start_fresh')));
     await tester.pumpAndSettle();
 
-    // Verify Skip option is visible on period start step
+    // Step 1: Period Start Date Screen -> Verify Skip option
     expect(find.text('Not sure? Skip with default (14 days ago)'), findsOneWidget);
     expect(find.text('SKIP'), findsOneWidget);
 

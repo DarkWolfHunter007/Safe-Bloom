@@ -7,10 +7,14 @@ import '../../../../core/utils/safe_bloom_date_utils.dart';
 import '../../domain/entities/period_entry.dart';
 
 class HistoricalPeriodSheet extends StatefulWidget {
+  final DateTime? initialStartDate;
+  final int? initialDurationDays;
   final Function(List<PeriodEntry> entries) onSaveEntries;
 
   const HistoricalPeriodSheet({
     super.key,
+    this.initialStartDate,
+    this.initialDurationDays,
     required this.onSaveEntries,
   });
 
@@ -20,7 +24,7 @@ class HistoricalPeriodSheet extends StatefulWidget {
 
 class _HistoricalPeriodSheetState extends State<HistoricalPeriodSheet> {
   late DateTime _startDate;
-  int _durationDays = 5;
+  late int _durationDays;
   FlowLevel _uniformFlow = FlowLevel.medium;
   bool _isCustomDailyFlows = false;
   final Map<int, FlowLevel> _dailyFlows = {};
@@ -29,8 +33,8 @@ class _HistoricalPeriodSheetState extends State<HistoricalPeriodSheet> {
   @override
   void initState() {
     super.initState();
-    // Default start date to 28 days ago
-    _startDate = DateTime.now().subtract(const Duration(days: 28));
+    _startDate = widget.initialStartDate ?? DateTime.now().subtract(const Duration(days: 28));
+    _durationDays = widget.initialDurationDays ?? 5;
   }
 
   @override
@@ -159,6 +163,7 @@ class _HistoricalPeriodSheetState extends State<HistoricalPeriodSheet> {
                       ],
                     ),
                     Slider(
+                      key: const ValueKey('historical_period_duration_slider'),
                       value: _durationDays.toDouble(),
                       min: 1,
                       max: 12,
@@ -176,11 +181,20 @@ class _HistoricalPeriodSheetState extends State<HistoricalPeriodSheet> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    _isCustomDailyFlows ? 'DAILY FLOW BREAKDOWN' : 'UNIFORM FLOW LEVEL',
-                    style: AppTypography.brandTagline(fontSize: 10),
+                  Expanded(
+                    child: Text(
+                      _isCustomDailyFlows ? 'DAILY FLOW BREAKDOWN' : 'UNIFORM FLOW LEVEL',
+                      style: AppTypography.brandTagline(fontSize: 10),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
+                  const SizedBox(width: AppSpacing.xs),
                   TextButton.icon(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                     onPressed: () => setState(() => _isCustomDailyFlows = !_isCustomDailyFlows),
                     icon: Icon(
                       _isCustomDailyFlows ? Icons.tune : Icons.edit_calendar,
@@ -202,24 +216,31 @@ class _HistoricalPeriodSheetState extends State<HistoricalPeriodSheet> {
                     final isSelected = _uniformFlow == flow;
                     return Expanded(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                        child: ChoiceChip(
-                          padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                          label: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              flow.name.toUpperCase(),
-                              style: AppTypography.body(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: isSelected ? Colors.white : AppColors.textMain,
+                        padding: const EdgeInsets.symmetric(horizontal: 2.5),
+                        child: GestureDetector(
+                          onTap: () => setState(() => _uniformFlow = flow),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(
+                              color: isSelected ? AppColors.dropCoral : AppColors.lightBackground,
+                              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                              border: Border.all(
+                                color: isSelected ? AppColors.dropCoral : AppColors.lightCardBorder,
+                                width: 1.2,
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                flow.name.toUpperCase(),
+                                style: AppTypography.body(
+                                  fontSize: 10,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                  color: isSelected ? Colors.white : AppColors.textMain,
+                                ),
                               ),
                             ),
                           ),
-                          selected: isSelected,
-                          selectedColor: AppColors.dropCoral,
-                          backgroundColor: AppColors.lightBackground,
-                          onSelected: (val) => setState(() => _uniformFlow = flow),
                         ),
                       ),
                     );
@@ -244,39 +265,44 @@ class _HistoricalPeriodSheetState extends State<HistoricalPeriodSheet> {
                         child: Row(
                           children: [
                             SizedBox(
-                              width: 85,
+                              width: 80,
                               child: Text(
                                 '${date.day} ${SafeBloomDateUtils.monthAbbr(date.month)}',
-                                style: AppTypography.body(fontSize: 12, fontWeight: FontWeight.w600),
+                                style: AppTypography.body(fontSize: 11, fontWeight: FontWeight.w600),
                               ),
                             ),
                             Expanded(
                               child: Row(
                                 children: FlowLevel.values.map((flow) {
                                   final isSelected = selectedFlow == flow;
+                                  final label = flow.name[0].toUpperCase() + flow.name.substring(1);
                                   return Expanded(
                                     child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 1.5),
-                                      child: ChoiceChip(
-                                        visualDensity: VisualDensity.compact,
-                                        padding: EdgeInsets.zero,
-                                        label: FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          child: Text(
-                                            flow.name.substring(0, 1).toUpperCase() + flow.name.substring(1),
-                                            style: AppTypography.body(
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.w600,
-                                              color: isSelected ? Colors.white : AppColors.textMain,
+                                      padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                                      child: GestureDetector(
+                                        onTap: () => setState(() => _dailyFlows[i] = flow),
+                                        child: AnimatedContainer(
+                                          duration: const Duration(milliseconds: 150),
+                                          padding: const EdgeInsets.symmetric(vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: isSelected ? AppColors.dropCoral : AppColors.lightCardBackground,
+                                            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                                            border: Border.all(
+                                              color: isSelected ? AppColors.dropCoral : AppColors.lightCardBorder,
+                                              width: 1.0,
+                                            ),
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              label,
+                                              style: AppTypography.body(
+                                                fontSize: 10,
+                                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                                color: isSelected ? Colors.white : AppColors.textMain,
+                                              ),
                                             ),
                                           ),
                                         ),
-                                        selected: isSelected,
-                                        selectedColor: AppColors.dropCoral,
-                                        backgroundColor: AppColors.lightCardBackground,
-                                        onSelected: (val) {
-                                          setState(() => _dailyFlows[i] = flow);
-                                        },
                                       ),
                                     ),
                                   );

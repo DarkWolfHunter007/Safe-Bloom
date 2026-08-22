@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../../../../core/services/local_notification_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -7,50 +9,106 @@ import '../../../tracking/data/repositories/tracking_repository.dart';
 import '../../../tracking/domain/entities/user_profile.dart';
 import '../../../tracking/presentation/views/home_shell_view.dart';
 
+class OnboardingGoalOption {
+  final AppMode mode;
+  final String title;
+  final String description;
+  final String emoji;
+
+  const OnboardingGoalOption({
+    required this.mode,
+    required this.title,
+    required this.description,
+    required this.emoji,
+  });
+}
+
 class OnboardingView extends StatefulWidget {
-  const OnboardingView({super.key});
+  final VoidCallback? onComplete;
+  const OnboardingView({super.key, this.onComplete});
 
   @override
   State<OnboardingView> createState() => _OnboardingViewState();
 }
 
 class _OnboardingViewState extends State<OnboardingView> {
-  final PageController _pageController = PageController();
-  final TrackingRepository _repository = TrackingRepository();
+  final TrackingRepository _repository = TrackingRepository.instance;
   int _currentPage = 0;
 
   DateTime? _selectedLastPeriod;
   int _avgCycleLength = 28;
   int _avgPeriodLength = 5;
-  String _selectedGoal = '🌸 Track Cycle & Symptoms';
+  int _selectedGoalIndex = 0; // index into _goalOptions; avoids dual-selection when two options share the same AppMode
 
-  final List<String> _goals = const [
-    '🌸 Track Cycle & Symptoms',
-    '👶 Conceive / Track Ovulation',
-    '🔒 Private & Anonymous Health Journal',
-    '⚡ Manage PMS & Energy Levels',
+  // Restore vault state (page 0)
+  bool _showRestoreForm = false;
+  bool _isRestoring = false;
+  final TextEditingController _restoreVaultController = TextEditingController();
+  final TextEditingController _restorePasswordController = TextEditingController();
+  bool _restoreObscure = true;
+
+  @override
+  void dispose() {
+    _restoreVaultController.dispose();
+    _restorePasswordController.dispose();
+    super.dispose();
+  }
+
+  final List<OnboardingGoalOption> _goalOptions = const [
+    OnboardingGoalOption(
+      mode: AppMode.trackCycle,
+      title: 'Track Cycle & Symptoms',
+      description: 'Menstrual health, PMS tracking & hormonal phase guidance',
+      emoji: '🌸',
+    ),
+    OnboardingGoalOption(
+      mode: AppMode.ttc,
+      title: 'Try to Conceive (TTC)',
+      description: 'Peak fertility window, ovulation countdown & conception guidance',
+      emoji: '👶',
+    ),
+    OnboardingGoalOption(
+      mode: AppMode.pregnancy,
+      title: 'Track Pregnancy',
+      description: 'Gestational age milestones, trimester progression & baby size',
+      emoji: '🤰',
+    ),
+    OnboardingGoalOption(
+      mode: AppMode.trackCycle,
+      title: 'Private & Anonymous Health Journal',
+      description: 'Zero cloud servers, zero trackers, encrypted locally on device',
+      emoji: '🔒',
+    ),
   ];
 
   Future<void> _completeOnboarding() async {
     if (_selectedLastPeriod == null) return;
 
     try {
+      final selectedOption = _goalOptions[_selectedGoalIndex];
+      final isPregnancy = selectedOption.mode == AppMode.pregnancy;
       final profile = UserProfile(
         lastPeriodStart: _selectedLastPeriod!,
         avgCycleLength: _avgCycleLength,
         avgPeriodLength: _avgPeriodLength,
         isCloudBackupEnabled: true,
-        preferredGoal: _selectedGoal,
+        isPregnancyModeEnabled: isPregnancy,
+        preferredGoal: selectedOption.mode.name,
       );
       await _repository.saveUserProfile(profile);
+      await LocalNotificationService.instance.requestPermission();
 
       // Onboarding saves starting profile info used for predictions.
       // Do NOT manufacture fake confirmed PeriodEntry records.
 
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeShellView()),
-      );
+      if (widget.onComplete != null) {
+        widget.onComplete!();
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeShellView()),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -69,7 +127,58 @@ class _OnboardingViewState extends State<OnboardingView> {
     await _completeOnboarding();
   }
 
+  Future<void> _handleRestoreVault() async {
+    final vault = _restoreVaultController.text.trim();
+    final password = _restorePasswordController.text.trim();
+
+    if (vault.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please paste your vault and enter the password.'),
+          backgroundColor: AppColors.petalRose,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isRestoring = true);
+
+    try {
+      await _repository.recoverAndRestoreFromEncryptedVault(
+        vaultJsonString: vault,
+        passphrase: password,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vault restored successfully! Welcome back.'),
+          backgroundColor: AppColors.dropCoral,
+        ),
+      );
+
+      if (widget.onComplete != null) {
+        widget.onComplete!();
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeShellView()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isRestoring = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Restore failed: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
   void _nextPage() {
+    // Page 1 (period date) — must have a date selected
     if (_currentPage == 1 && _selectedLastPeriod == null) {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -84,10 +193,7 @@ class _OnboardingViewState extends State<OnboardingView> {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
     if (_currentPage < 3) {
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
+      setState(() => _currentPage++);
     } else {
       _completeOnboarding();
     }
@@ -100,29 +206,29 @@ class _OnboardingViewState extends State<OnboardingView> {
       body: SafeArea(
         child: Column(
           children: [
-            // Top Progress Bar & Skip Button
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Row(
-                      children: List.generate(4, (index) {
-                        final isActive = index <= _currentPage;
-                        return Expanded(
-                          child: Container(
-                            height: 4,
-                            margin: const EdgeInsets.symmetric(horizontal: 2),
-                            decoration: BoxDecoration(
-                              color: isActive ? AppColors.dropCoral : AppColors.lightCardBorder,
-                              borderRadius: BorderRadius.circular(2),
+            // Top Progress Bar & Skip Button (shown on pages 1-3)
+            if (_currentPage > 0)
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: List.generate(3, (index) {
+                          final isActive = index <= (_currentPage - 1);
+                          return Expanded(
+                            child: Container(
+                              height: 4,
+                              margin: const EdgeInsets.symmetric(horizontal: 2),
+                              decoration: BoxDecoration(
+                                color: isActive ? AppColors.dropCoral : AppColors.lightCardBorder,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
                             ),
-                          ),
-                        );
-                      }),
+                          );
+                        }),
+                      ),
                     ),
-                  ),
-                  if (_currentPage > 0) ...[
                     const SizedBox(width: AppSpacing.sm),
                     TextButton(
                       onPressed: _skipOnboarding,
@@ -140,17 +246,15 @@ class _OnboardingViewState extends State<OnboardingView> {
                       ),
                     ),
                   ],
-                ],
+                ),
               ),
-            ),
 
             // Page View Content
             Expanded(
-              child: PageView(
-                controller: _pageController,
-                onPageChanged: (page) => setState(() => _currentPage = page),
+              child: IndexedStack(
+                index: _currentPage,
                 children: [
-                  _buildWelcomeStep(),
+                  _buildRestoreOrFreshStep(),
                   _buildPeriodStartStep(),
                   _buildCycleLengthStep(),
                   _buildGoalStep(),
@@ -158,40 +262,42 @@ class _OnboardingViewState extends State<OnboardingView> {
               ),
             ),
 
-            // Bottom Action Bar
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.dropCoral,
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            // Bottom Action Bar (hidden on page 0 — it has Start Fresh / Restore cards)
+            if (_currentPage > 0)
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.dropCoral,
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                      ),
                     ),
-                  ),
-                  onPressed: _nextPage,
-                  child: Text(
-                    _currentPage == 3 ? 'GET STARTED' : 'CONTINUE',
-                    style: AppTypography.brandTagline(color: Colors.white, fontSize: 13),
+                    onPressed: _nextPage,
+                    child: Text(
+                      _currentPage == 3 ? 'GET STARTED' : 'CONTINUE',
+                      style: AppTypography.brandTagline(color: Colors.white, fontSize: 13),
+                    ),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ),
     );
   }
 
-  // --- Step 1: Welcome & Privacy ---
-  Widget _buildWelcomeStep() {
-    return Padding(
+  // --- Page 0: Start Fresh or Restore Vault ---
+  Widget _buildRestoreOrFreshStep() {
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.lg),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          const SizedBox(height: AppSpacing.xl),
           Container(
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
@@ -208,37 +314,234 @@ class _OnboardingViewState extends State<OnboardingView> {
             child: ClipOval(
               child: Image.asset(
                 'assets/images/safe-bloom-logo.png',
-                height: 90,
-                width: 90,
+                height: 80,
+                width: 80,
                 fit: BoxFit.cover,
               ),
             ),
           ),
           const SizedBox(height: AppSpacing.lg),
-          Text('Welcome to Safe Bloom', style: AppTypography.brandTitle(fontSize: 30), textAlign: TextAlign.center),
+          Text(
+            'Welcome to Safe Bloom',
+            style: AppTypography.brandTitle(fontSize: 28),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: AppSpacing.xs),
           Text(
             'Your Cycle. Your Privacy. Your Power.',
             style: AppTypography.brandTagline(color: AppColors.petalRose, fontSize: 11),
+            textAlign: TextAlign.center,
           ),
-          const SizedBox(height: AppSpacing.lg),
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: AppColors.lightCardBackground,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              border: Border.all(color: AppColors.lightCardBorder),
+          const SizedBox(height: AppSpacing.xl),
+
+          if (!_showRestoreForm) ...[
+            // --- Choice cards ---
+            GestureDetector(
+              key: const ValueKey('onboarding_start_fresh'),
+              behavior: HitTestBehavior.opaque,
+              onTap: _nextPage,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: AppColors.dropCoral,
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.add_circle_outline_rounded, color: Colors.white, size: 28),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Start Fresh',
+                            style: AppTypography.body(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Set up a new Safe Bloom profile',
+                            style: AppTypography.body(fontSize: 12, color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 16),
+                  ],
+                ),
+              ),
             ),
-            child: Column(
-              children: [
-                _buildPrivacyPill(Icons.lock, '256-Bit AES Hardware Encrypted', 'Stored safely in your device Keystore'),
-                const Divider(height: AppSpacing.md),
-                _buildPrivacyPill(Icons.no_accounts, '100% Anonymous', 'No email, real name, or account required'),
-                const Divider(height: AppSpacing.md),
-                _buildPrivacyPill(Icons.money_off, 'Zero Data Selling Guarantee', 'Your intimate data never leaves your device'),
-              ],
+            const SizedBox(height: AppSpacing.sm),
+            GestureDetector(
+              key: const ValueKey('onboarding_restore_vault'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _showRestoreForm = true),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: AppColors.lightCardBackground,
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                  border: Border.all(color: AppColors.lightCardBorder),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.shield_outlined, color: AppColors.dropCoral, size: 28),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Restore from Vault',
+                            style: AppTypography.body(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textMain,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Recover your data from an encrypted backup',
+                            style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios_rounded, color: AppColors.textMuted, size: 16),
+                  ],
+                ),
+              ),
             ),
-          ),
+            const SizedBox(height: AppSpacing.xl),
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.lightCardBackground,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(color: AppColors.lightCardBorder),
+              ),
+              child: Column(
+                children: [
+                  _buildPrivacyPill(Icons.lock, '256-Bit AES Hardware Encrypted', 'Stored safely in your device Keystore'),
+                  const Divider(height: AppSpacing.md),
+                  _buildPrivacyPill(Icons.no_accounts, '100% Anonymous', 'No email, real name, or account required'),
+                  const Divider(height: AppSpacing.md),
+                  _buildPrivacyPill(Icons.money_off, 'Zero Data Selling Guarantee', 'Your intimate data never leaves your device'),
+                ],
+              ),
+            ),
+          ] else ...[
+            // --- Restore vault form ---
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _isRestoring
+                    ? null
+                    : () => setState(() {
+                          _showRestoreForm = false;
+                          _restoreVaultController.clear();
+                          _restorePasswordController.clear();
+                        }),
+                icon: const Icon(Icons.arrow_back, size: 16, color: AppColors.textMuted),
+                label: Text('Back', style: AppTypography.body(fontSize: 13, color: AppColors.textMuted)),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Restore Encrypted Vault', style: AppTypography.brandTitle(fontSize: 22)),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Paste your encrypted backup and enter the vault password to recover all your data.',
+                style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              controller: _restoreVaultController,
+              maxLines: 5,
+              enabled: !_isRestoring,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+              decoration: InputDecoration(
+                hintText: 'Paste {"safe_bloom_backup_version": 1, ...}',
+                filled: true,
+                fillColor: AppColors.lightCardBackground,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                  borderSide: const BorderSide(color: AppColors.lightCardBorder),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _isRestoring
+                    ? null
+                    : () async {
+                        final data = await Clipboard.getData(Clipboard.kTextPlain);
+                        if (data?.text != null) _restoreVaultController.text = data!.text!;
+                      },
+                icon: const Icon(Icons.paste, size: 14, color: AppColors.dropCoral),
+                label: Text('PASTE', style: AppTypography.brandTagline(color: AppColors.dropCoral, fontSize: 10)),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            TextField(
+              controller: _restorePasswordController,
+              obscureText: _restoreObscure,
+              enabled: !_isRestoring,
+              decoration: InputDecoration(
+                labelText: 'Vault Password',
+                filled: true,
+                fillColor: AppColors.lightCardBackground,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                  borderSide: const BorderSide(color: AppColors.lightCardBorder),
+                ),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _restoreObscure ? Icons.visibility : Icons.visibility_off,
+                    size: 18,
+                  ),
+                  onPressed: () => setState(() => _restoreObscure = !_restoreObscure),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.dropCoral,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                  ),
+                ),
+                onPressed: _isRestoring ? null : _handleRestoreVault,
+                child: _isRestoring
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : Text(
+                        'RESTORE VAULT',
+                        style: AppTypography.brandTagline(color: Colors.white, fontSize: 13),
+                      ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -294,7 +597,7 @@ class _OnboardingViewState extends State<OnboardingView> {
                     final picked = await showDatePicker(
                       context: context,
                       initialDate: initial.isAfter(DateTime.now()) ? DateTime.now() : initial,
-                      firstDate: DateTime.now().subtract(const Duration(days: 548)),
+                      firstDate: DateTime.now().subtract(const Duration(days: 180)),
                       lastDate: DateTime.now(),
                     );
                     if (picked != null) {
@@ -360,6 +663,7 @@ class _OnboardingViewState extends State<OnboardingView> {
                   style: AppTypography.brandTitle(fontSize: 32, color: AppColors.dropCoral),
                 ),
                 Slider(
+                  key: const ValueKey('onboarding_cycle_slider'),
                   value: _avgCycleLength.toDouble(),
                   min: 20,
                   max: 45,
@@ -390,6 +694,7 @@ class _OnboardingViewState extends State<OnboardingView> {
                   style: AppTypography.brandTitle(fontSize: 28, color: AppColors.petalRose),
                 ),
                 Slider(
+                  key: const ValueKey('onboarding_period_slider'),
                   value: _avgPeriodLength.toDouble(),
                   min: 2,
                   max: 10,
@@ -430,13 +735,13 @@ class _OnboardingViewState extends State<OnboardingView> {
           const SizedBox(height: AppSpacing.lg),
           Expanded(
             child: ListView.separated(
-              itemCount: _goals.length,
+              itemCount: _goalOptions.length,
               separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
               itemBuilder: (context, index) {
-                final goal = _goals[index];
-                final isSelected = _selectedGoal == goal;
+                final option = _goalOptions[index];
+                final isSelected = _selectedGoalIndex == index;
                 return GestureDetector(
-                  onTap: () => setState(() => _selectedGoal = goal),
+                  onTap: () => setState(() => _selectedGoalIndex = index),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.all(AppSpacing.md),
@@ -450,13 +755,28 @@ class _OnboardingViewState extends State<OnboardingView> {
                     ),
                     child: Row(
                       children: [
+                        Text(option.emoji, style: const TextStyle(fontSize: 24)),
+                        const SizedBox(width: AppSpacing.md),
                         Expanded(
-                          child: Text(
-                            goal,
-                            style: AppTypography.body(
-                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                              color: AppColors.textMain,
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                option.title,
+                                style: AppTypography.body(
+                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                  color: AppColors.textMain,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                option.description,
+                                style: AppTypography.body(
+                                  fontSize: 11,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         if (isSelected)

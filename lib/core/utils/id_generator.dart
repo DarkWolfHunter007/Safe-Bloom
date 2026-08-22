@@ -1,12 +1,12 @@
-import 'dart:math';
+import 'package:uuid/uuid.dart';
 
-final Random _secureRandom = Random.secure();
+const _uuid = Uuid();
 
-/// Generates a collision-resistant unique ID combining timestamp and secure random bits.
+/// Generates a UUID v4 unique ID with an optional prefix.
+/// UUID v4 provides 122 bits of randomness — collision-safe even at high write rates.
 String generateUniqueId([String prefix = '']) {
-  final timestamp = DateTime.now().millisecondsSinceEpoch;
-  final randomNum = _secureRandom.nextInt(999999);
-  return prefix.isNotEmpty ? '${prefix}_${timestamp}_$randomNum' : '${timestamp}_$randomNum';
+  final id = _uuid.v4();
+  return prefix.isNotEmpty ? '${prefix}_$id' : id;
 }
 
 class IdGenerator {

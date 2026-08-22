@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import '../../../../core/utils/cycle_group_utils.dart';
 import '../entities/period_entry.dart';
 import '../entities/symptom_entry.dart';
 import '../entities/user_profile.dart';
@@ -63,8 +64,12 @@ class PdfReportGenerator {
     final cutoffDate = reportDate.subtract(const Duration(days: 180));
     final dateFormat = DateFormat('MMM dd, yyyy');
 
-    // 1. Calculate dynamic averages
-    final dynamicAverages = CycleCalculator.calculateAveragesFromEntries(periodEntries);
+    // 1. Calculate dynamic averages (groupIntoCycles inside filters pure-spotting groups automatically)
+    final dynamicAverages = CycleCalculator.calculateAveragesFromEntries(
+      periodEntries,
+      fallbackCycleLength: profile.avgCycleLength,
+      fallbackPeriodLength: profile.avgPeriodLength,
+    );
     final avgCycle = dynamicAverages['avgCycleLength'] ?? profile.avgCycleLength;
     final avgPeriod = dynamicAverages['avgPeriodLength'] ?? profile.avgPeriodLength;
 
@@ -77,41 +82,28 @@ class PdfReportGenerator {
         .where((e) => e.timestamp.isAfter(cutoffDate) || e.timestamp.isAtSameMomentAs(cutoffDate))
         .toList();
 
-    // 3. Process 6-Month Cycle History
-    final sortedPeriodEntries = List<PeriodEntry>.from(periodEntries)
-      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-
-    final List<List<PeriodEntry>> allCycles = [];
-    List<PeriodEntry> currentCycle = [];
-
-    for (final entry in sortedPeriodEntries) {
-      if (currentCycle.isEmpty) {
-        currentCycle.add(entry);
-      } else {
-        final prev = currentCycle.last;
-        if (entry.timestamp.difference(prev.timestamp).inDays <= 2) {
-          currentCycle.add(entry);
-        } else {
-          allCycles.add(currentCycle);
-          currentCycle = [entry];
-        }
-      }
-    }
-    if (currentCycle.isNotEmpty) {
-      allCycles.add(currentCycle);
-    }
+    // 3. Process 6-Month Cycle History (genuine menstrual cycles only)
+    // groupIntoCycles already excludes pure-spotting groups
+    final genuineCycles = CycleGroupUtils.groupIntoCycles(periodEntries);
+    // Collect isolated spotting events (not part of any genuine menstrual cycle)
+    final isolatedSpottingEntries = CycleGroupUtils.getIsolatedSpottingEntries(periodEntries)
+        .where((e) => e.timestamp.isAfter(cutoffDate) || e.timestamp.isAtSameMomentAs(cutoffDate))
+        .toList();
 
     final List<CycleHistorySummary> cycleSummaries = [];
-    for (int i = 0; i < allCycles.length; i++) {
-      final cycle = allCycles[i];
-      final startDate = cycle.first.timestamp;
-      final endDate = cycle.last.timestamp;
-      
+    for (int i = 0; i < genuineCycles.length; i++) {
+      final cycle = genuineCycles[i];
+      final startDate = CycleGroupUtils.getCycleStartDate(cycle);
+      final endDate = CycleGroupUtils.getCycleEndDate(cycle);
+
       // Check if cycle overlaps with 6-month window or fallback to all cycles if recent
-      if (endDate.isAfter(cutoffDate) || i >= allCycles.length - 6) {
+      if (endDate.isAfter(cutoffDate) || i >= genuineCycles.length - 6) {
         int? cycleLengthDays;
         if (i > 0) {
-          cycleLengthDays = startDate.difference(allCycles[i - 1].first.timestamp).inDays;
+          final prevStart = CycleGroupUtils.getCycleStartDate(genuineCycles[i - 1]);
+          final d1 = DateTime(prevStart.year, prevStart.month, prevStart.day);
+          final d2 = DateTime(startDate.year, startDate.month, startDate.day);
+          cycleLengthDays = d2.difference(d1).inDays;
         }
 
         // Determine max flow level and collect non-empty user notes
@@ -132,7 +124,7 @@ class PdfReportGenerator {
             cycleNumber: i + 1,
             startDate: startDate,
             endDate: endDate,
-            periodDurationDays: cycle.length,
+            periodDurationDays: CycleGroupUtils.getCycleActiveDurationDays(cycle),
             cycleLengthDays: cycleLengthDays,
             maxFlow: maxFlow,
             notes: notesList.toSet().toList(),
@@ -209,7 +201,7 @@ class PdfReportGenerator {
                     children: [
                       pw.Text(
                         'OB-GYN MEDICAL REPORT',
-                        style: const pw.TextStyle(
+                        style: pw.TextStyle(
                           fontSize: 18,
                           fontWeight: pw.FontWeight.bold,
                           color: _primaryColor,
@@ -217,7 +209,7 @@ class PdfReportGenerator {
                       ),
                       pw.Text(
                         'SafeBloom Menstrual & Reproductive Health Record',
-                        style: const pw.TextStyle(
+                        style: pw.TextStyle(
                           fontSize: 9,
                           color: _accentColor,
                           fontWeight: pw.FontWeight.bold,
@@ -234,7 +226,7 @@ class PdfReportGenerator {
                       ),
                       pw.Text(
                         'Confidential Clinical Document',
-                        style: const pw.TextStyle(fontSize: 8, color: _textMutedColor, fontStyle: pw.FontStyle.italic),
+                        style: pw.TextStyle(fontSize: 8, color: _textMutedColor, fontStyle: pw.FontStyle.italic),
                       ),
                     ],
                   ),
@@ -250,17 +242,17 @@ class PdfReportGenerator {
           return pw.Column(
             children: [
               pw.Divider(color: _borderLineColor, thickness: 0.5),
-              pw.SizedBox(height: 4),
+              pw.SizedBox(height: 3),
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text(
-                    'SafeBloom - Private & Encrypted Health Summary',
-                    style: const pw.TextStyle(fontSize: 8, color: _textMutedColor),
+                    'SafeBloom Clinical Summary | Statistical estimate based on user logs | Not for contraception or self-diagnosis',
+                    style: const pw.TextStyle(fontSize: 7, color: _textMutedColor),
                   ),
                   pw.Text(
                     'Page ${context.pageNumber} of ${context.pagesCount}',
-                    style: const pw.TextStyle(fontSize: 8, color: _textMutedColor),
+                    style: const pw.TextStyle(fontSize: 7.5, color: _textMutedColor),
                   ),
                 ],
               ),
@@ -302,7 +294,7 @@ class PdfReportGenerator {
             // Section 1: 6-Month Cycle History
             pw.Text(
               '1. 6-Month Cycle History',
-              style: const pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: _primaryColor),
+              style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: _primaryColor),
             ),
             pw.SizedBox(height: 4),
             pw.Text(
@@ -320,13 +312,13 @@ class PdfReportGenerator {
                 ),
                 child: pw.Text(
                   'No period cycles recorded in the last 6 months.',
-                  style: const pw.TextStyle(fontSize: 9, color: _textMutedColor, fontStyle: pw.FontStyle.italic),
+                  style: pw.TextStyle(fontSize: 9, color: _textMutedColor, fontStyle: pw.FontStyle.italic),
                 ),
               )
             else
               pw.TableHelper.fromTextArray(
                 border: pw.TableBorder.all(color: _borderLineColor, width: 0.5),
-                headerStyle: const pw.TextStyle(fontWeight: pw.FontWeight.bold, color: _primaryColor, fontSize: 9),
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: _primaryColor, fontSize: 9),
                 headerDecoration: const pw.BoxDecoration(color: _cardBgColor),
                 cellStyle: const pw.TextStyle(fontSize: 8.5, color: _textMainColor),
                 cellAlignment: pw.Alignment.centerLeft,
@@ -357,10 +349,44 @@ class PdfReportGenerator {
               ),
             pw.SizedBox(height: 16),
 
+            // Section 1.1: Intermenstrual Bleeding / Spotting (only if isolated spotting events exist)
+            if (isolatedSpottingEntries.isNotEmpty) ...[
+              pw.Text(
+                '1.1 Intermenstrual Bleeding / Spotting Events',
+                style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: _primaryColor),
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                'The following spotting events occurred outside of any menstrual period. '
+                'They are stored for completeness but do NOT represent new menstrual cycles '
+                'and are excluded from cycle length and average calculations.',
+                style: const pw.TextStyle(fontSize: 9, color: _textMutedColor),
+              ),
+              pw.SizedBox(height: 8),
+              pw.TableHelper.fromTextArray(
+                border: pw.TableBorder.all(color: _borderLineColor, width: 0.5),
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: _primaryColor, fontSize: 9),
+                headerDecoration: const pw.BoxDecoration(color: _cardBgColor),
+                cellStyle: const pw.TextStyle(fontSize: 8.5, color: _textMainColor),
+                cellAlignment: pw.Alignment.centerLeft,
+                headers: ['Date', 'Flow', 'Notes'],
+                data: isolatedSpottingEntries.map((e) {
+                  final dateStr = '${e.timestamp.day} ${DateFormat.MMM().format(e.timestamp)} ${e.timestamp.year}';
+                  final noteStr = e.notes?.trim().isNotEmpty == true
+                      && e.notes != 'Logged from Calendar View'
+                      && e.notes != 'Initial onboarding period entry'
+                      ? e.notes!.trim()
+                      : '—';
+                  return [dateStr, 'Spotting', noteStr];
+                }).toList(),
+              ),
+              pw.SizedBox(height: 16),
+            ],
+
             // Section 2: Flow Statistics & Breakdown
             pw.Text(
               '2. Flow Statistics & Distribution',
-              style: const pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: _primaryColor),
+              style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: _primaryColor),
             ),
             pw.SizedBox(height: 4),
             pw.Text(
@@ -371,7 +397,7 @@ class PdfReportGenerator {
 
             pw.TableHelper.fromTextArray(
               border: pw.TableBorder.all(color: _borderLineColor, width: 0.5),
-              headerStyle: const pw.TextStyle(fontWeight: pw.FontWeight.bold, color: _primaryColor, fontSize: 9),
+              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: _primaryColor, fontSize: 9),
               headerDecoration: const pw.BoxDecoration(color: _cardBgColor),
               cellStyle: const pw.TextStyle(fontSize: 8.5, color: _textMainColor),
               cellAlignment: pw.Alignment.centerLeft,
@@ -397,7 +423,7 @@ class PdfReportGenerator {
             // Section 3: Symptom Frequencies & Severity
             pw.Text(
               '3. Symptom Frequency & Severity Index',
-              style: const pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: _primaryColor),
+              style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: _primaryColor),
             ),
             pw.SizedBox(height: 4),
             pw.Text(
@@ -415,13 +441,13 @@ class PdfReportGenerator {
                 ),
                 child: pw.Text(
                   'No symptoms logged during this period.',
-                  style: const pw.TextStyle(fontSize: 9, color: _textMutedColor, fontStyle: pw.FontStyle.italic),
+                  style: pw.TextStyle(fontSize: 9, color: _textMutedColor, fontStyle: pw.FontStyle.italic),
                 ),
               )
             else
               pw.TableHelper.fromTextArray(
                 border: pw.TableBorder.all(color: _borderLineColor, width: 0.5),
-                headerStyle: const pw.TextStyle(fontWeight: pw.FontWeight.bold, color: _primaryColor, fontSize: 9),
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: _primaryColor, fontSize: 9),
                 headerDecoration: const pw.BoxDecoration(color: _cardBgColor),
                 cellStyle: const pw.TextStyle(fontSize: 8.5, color: _textMainColor),
                 cellAlignment: pw.Alignment.centerLeft,
@@ -450,7 +476,7 @@ class PdfReportGenerator {
             // Section 4: Clinical Notes & Physician Remarks
             pw.Text(
               '4. Clinical Notes & Observations',
-              style: const pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: _primaryColor),
+              style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: _primaryColor),
             ),
             pw.SizedBox(height: 6),
             pw.Container(
@@ -463,7 +489,7 @@ class PdfReportGenerator {
               ),
               child: pw.Text(
                 'Physician Notes / Assessment (Space reserved for OB-GYN clinician review):',
-                style: const pw.TextStyle(fontSize: 8.5, color: _textMutedColor, fontStyle: pw.FontStyle.italic),
+                style: pw.TextStyle(fontSize: 8.5, color: _textMutedColor, fontStyle: pw.FontStyle.italic),
               ),
             ),
           ];

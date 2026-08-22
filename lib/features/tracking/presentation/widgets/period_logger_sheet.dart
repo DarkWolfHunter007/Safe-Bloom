@@ -6,12 +6,14 @@ import '../../domain/entities/period_entry.dart';
 
 class PeriodLoggerSheet extends StatefulWidget {
   final DateTime? selectedDate;
-  final Function(FlowLevel flow, List<String> symptoms, String? notes) onSave;
+  final FlowLevel? initialFlow;
+  final Function(FlowLevel? flow, List<String> symptoms, String? notes) onSave;
   final VoidCallback? onDelete;
 
   const PeriodLoggerSheet({
     super.key,
     this.selectedDate,
+    this.initialFlow,
     required this.onSave,
     this.onDelete,
   });
@@ -21,22 +23,95 @@ class PeriodLoggerSheet extends StatefulWidget {
 }
 
 class _PeriodLoggerSheetState extends State<PeriodLoggerSheet> {
-  FlowLevel _selectedFlow = FlowLevel.medium;
+  late FlowLevel _selectedFlow;
   final Set<String> _selectedSymptoms = {};
   final TextEditingController _notesController = TextEditingController();
 
-  final List<String> _symptomOptions = const [
-    '⚡ Cramps',
-    '😊 Happy',
-    '😴 Fatigued',
-    '💆 Headache',
-    '🍫 Cravings',
-    '🌸 Calm',
-    '🩸 Spotting',
-    '🤢 Nausea',
-    '⚡ High Energy',
-    '💧 Water Retention',
-  ];
+  final Map<String, List<String>> _categorizedSymptoms = const {
+    'BODY & PAIN': [
+      '⚡ Cramps',
+      '💆 Headache',
+      '🤢 Nausea',
+      '🎈 Bloating',
+      '🦴 Backache',
+      '🪷 Breast Tenderness',
+    ],
+    'MOOD & MIND': [
+      '😊 Happy',
+      '🌸 Calm',
+      '⚡ High Energy',
+      '😴 Fatigued',
+      '🌀 Anxious',
+      '⛈️ Irritable',
+      '💧 Sad',
+    ],
+    'CERVICAL FLUID': [
+      '🥚 Egg White (Fertile)',
+      '💧 Watery',
+      '🥛 Creamy',
+      '🍯 Sticky',
+      '🌵 Dry',
+    ],
+    'BIOMARKERS': [
+      '🌡️ BBT: 97.5°F',
+      '🌡️ BBT: 98.0°F',
+      '🌡️ BBT: 98.6°F',
+      '🌡️ BBT: 99.0°F',
+    ],
+    'INTIMACY': [
+      '🔒 Protected Sex',
+      '🔓 Unprotected Sex',
+      '💖 High Libido',
+    ],
+  };
+
+  Widget _buildSymptomCategorySection(String title, List<String> options) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          title,
+          style: AppTypography.brandTagline(fontSize: 10),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children: options.map((symptom) {
+            final isSelected = _selectedSymptoms.contains(symptom);
+            return FilterChip(
+              visualDensity: VisualDensity.compact,
+              label: Text(
+                symptom,
+                style: AppTypography.body(
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  color: isSelected ? Colors.white : AppColors.textMain,
+                ),
+              ),
+              selected: isSelected,
+              selectedColor: (title == 'CERVICAL FLUID' || title == 'BIOMARKERS')
+                  ? AppColors.phaseOvulation
+                  : AppColors.petalRose,
+              backgroundColor: AppColors.lightBackground,
+              onSelected: (val) {
+                setState(() {
+                  isSelected ? _selectedSymptoms.remove(symptom) : _selectedSymptoms.add(symptom);
+                });
+              },
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedFlow = widget.initialFlow ?? FlowLevel.medium;
+  }
 
   @override
   void dispose() {
@@ -57,8 +132,10 @@ class _PeriodLoggerSheetState extends State<PeriodLoggerSheet> {
         targetDate.day == DateTime.now().day;
 
     final dateTitle = isToday
-        ? "Log Today's Cycle"
-        : "Log Cycle for ${targetDate.day} ${_getMonthName(targetDate.month)} ${targetDate.year}";
+        ? "Log Today's Symptoms & Notes"
+        : "Log Symptoms for ${targetDate.day} ${_getMonthName(targetDate.month)} ${targetDate.year}";
+
+    final isPeriodActive = widget.initialFlow != null;
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -88,69 +165,52 @@ class _PeriodLoggerSheetState extends State<PeriodLoggerSheet> {
                 style: AppTypography.brandTitle(fontSize: 22),
               ),
               const SizedBox(height: AppSpacing.md),
-              Text(
-                'PERIOD FLOW',
-                style: AppTypography.brandTagline(fontSize: 10),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                children: FlowLevel.values.map((flow) {
-                  final isSelected = _selectedFlow == flow;
-                  return Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                      child: ChoiceChip(
-                        padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                        label: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            flow.name.toUpperCase(),
-                            style: AppTypography.body(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: isSelected ? Colors.white : AppColors.textMain,
+              if (isPeriodActive) ...[
+                Text(
+                  'PERIOD FLOW INTENSITY',
+                  style: AppTypography.brandTagline(fontSize: 10),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: FlowLevel.values.map((flow) {
+                    final isSelected = _selectedFlow == flow;
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2.5),
+                        child: GestureDetector(
+                          onTap: () => setState(() => _selectedFlow = flow),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(
+                              color: isSelected ? AppColors.dropCoral : AppColors.lightBackground,
+                              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                              border: Border.all(
+                                color: isSelected ? AppColors.dropCoral : AppColors.lightCardBorder,
+                                width: 1.2,
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                flow.name.toUpperCase(),
+                                style: AppTypography.body(
+                                  fontSize: 10,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                  color: isSelected ? Colors.white : AppColors.textMain,
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                        selected: isSelected,
-                        selectedColor: AppColors.dropCoral,
-                        backgroundColor: AppColors.lightBackground,
-                        onSelected: (val) => setState(() => _selectedFlow = flow),
                       ),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                'SYMPTOMS & MOOD',
-                style: AppTypography.brandTagline(fontSize: 10),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Wrap(
-                spacing: AppSpacing.xs,
-                runSpacing: AppSpacing.xs,
-                children: _symptomOptions.map((symptom) {
-                  final isSelected = _selectedSymptoms.contains(symptom);
-                  return FilterChip(
-                    label: Text(
-                      symptom,
-                      style: AppTypography.body(
-                        fontSize: 12,
-                        color: isSelected ? Colors.white : AppColors.textMain,
-                      ),
-                    ),
-                    selected: isSelected,
-                    selectedColor: AppColors.petalRose,
-                    backgroundColor: AppColors.lightBackground,
-                    onSelected: (val) {
-                      setState(() {
-                        isSelected ? _selectedSymptoms.remove(symptom) : _selectedSymptoms.add(symptom);
-                      });
-                    },
-                  );
-                }).toList(),
-              ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
+              ..._categorizedSymptoms.entries.map((entry) {
+                return _buildSymptomCategorySection(entry.key, entry.value);
+              }),
               const SizedBox(height: AppSpacing.md),
               Text(
                 'ADDITIONAL NOTES',
@@ -200,7 +260,7 @@ class _PeriodLoggerSheetState extends State<PeriodLoggerSheet> {
                   onPressed: () {
                     final notes = _notesController.text.trim();
                     widget.onSave(
-                      _selectedFlow,
+                      isPeriodActive ? _selectedFlow : null,
                       _selectedSymptoms.toList(),
                       notes.isEmpty ? null : notes,
                     );
@@ -231,7 +291,7 @@ class _PeriodLoggerSheetState extends State<PeriodLoggerSheet> {
                     },
                     icon: const Icon(Icons.delete_outline, size: 16, color: AppColors.dropCoral),
                     label: Text(
-                      'UNCHECK / REMOVE PERIOD LOG',
+                      'UNMARK / REMOVE PERIOD LOG',
                       style: AppTypography.brandTagline(color: AppColors.dropCoral, fontSize: 11),
                     ),
                   ),

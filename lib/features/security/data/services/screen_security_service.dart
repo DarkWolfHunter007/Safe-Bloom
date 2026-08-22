@@ -1,10 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../../../../core/services/secure_storage_service.dart';
 
 class ScreenSecurityService {
   static final ScreenSecurityService instance = ScreenSecurityService._init();
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  final FlutterSecureStorage _secureStorage = SafeBloomSecureStorage.instance;
   static const MethodChannel _channel =
       MethodChannel('com.example.safe_bloom/screen_security');
 

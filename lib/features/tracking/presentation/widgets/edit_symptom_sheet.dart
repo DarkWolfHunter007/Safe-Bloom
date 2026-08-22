@@ -20,7 +20,7 @@ class EditSymptomSheet extends StatefulWidget {
 }
 
 class _EditSymptomSheetState extends State<EditSymptomSheet> {
-  final TrackingRepository _repository = TrackingRepository();
+  final TrackingRepository _repository = TrackingRepository.instance;
   late int _intensity;
   late TextEditingController _notesController;
 
@@ -161,6 +161,7 @@ class _EditSymptomSheetState extends State<EditSymptomSheet> {
                 style: AppTypography.brandTagline(fontSize: 10),
               ),
               Slider(
+                key: const ValueKey('edit_symptom_intensity_slider'),
                 value: _intensity.toDouble(),
                 min: 1,
                 max: 5,

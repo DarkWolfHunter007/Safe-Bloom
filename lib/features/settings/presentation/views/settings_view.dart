@@ -6,13 +6,15 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/safe_bloom_date_utils.dart';
-import '../../../onboarding/presentation/views/onboarding_view.dart';
+import '../../../../main.dart';
 import '../../../security/data/services/biometric_auth_service.dart';
+import '../../../../core/services/local_notification_service.dart';
 import '../../../security/data/services/screen_security_service.dart';
 import '../../../tracking/data/repositories/tracking_repository.dart';
 import '../../../tracking/domain/entities/user_profile.dart';
 import '../../../tracking/domain/services/pdf_report_generator.dart';
 import '../../../tracking/presentation/views/cycle_history_view.dart';
+import 'notification_settings_view.dart';
 import 'privacy_policy_view.dart';
 import 'terms_view.dart';
 
@@ -25,7 +27,7 @@ class SettingsView extends StatefulWidget {
 
 class SettingsViewState extends State<SettingsView>
     with SingleTickerProviderStateMixin {
-  final TrackingRepository _repository = TrackingRepository();
+  final TrackingRepository _repository = TrackingRepository.instance;
   final BiometricAuthService _biometricAuthService = BiometricAuthService.instance;
 
   UserProfile? _profile;
@@ -35,8 +37,11 @@ class SettingsViewState extends State<SettingsView>
   }
   bool _biometricLock = false;
   bool _screenSecurityEnabled = false;
+  bool _isPregnancyModeEnabled = false;
   bool _isLoading = true;
   bool _isLoadingBiometricSetting = true;
+  bool _osNotifsEnabled = true;
+  NotificationSettings _notifSettings = const NotificationSettings();
 
   late final AnimationController _shimmerController;
   late final Animation<double> _shimmerAnim;
@@ -66,11 +71,16 @@ class SettingsViewState extends State<SettingsView>
       final enabled = await _biometricAuthService.isBiometricLockEnabled();
       final screenSecurityEnabled =
           await ScreenSecurityService.instance.isScreenSecurityEnabled();
+      final notifSettings = await LocalNotificationService.instance.getSettings();
+      final osNotifsEnabled = await LocalNotificationService.instance.areNotificationsEnabled();
       if (mounted) {
         setState(() {
           _profile = profile;
           _biometricLock = enabled;
           _screenSecurityEnabled = screenSecurityEnabled;
+          _isPregnancyModeEnabled = profile.isPregnancyModeEnabled;
+          _notifSettings = notifSettings;
+          _osNotifsEnabled = osNotifsEnabled;
           _isLoadingBiometricSetting = false;
           _isLoading = false;
         });
@@ -97,145 +107,129 @@ class SettingsViewState extends State<SettingsView>
     double height = 16,
     double radius = 8,
   }) {
-    return AnimatedBuilder(
-      animation: _shimmerAnim,
-      builder: (_, __) => Opacity(
-        opacity: _shimmerAnim.value,
-        child: Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            color: AppColors.lightCardBorder,
-            borderRadius: BorderRadius.circular(radius),
-          ),
-        ),
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: AppColors.lightCardBorder,
+        borderRadius: BorderRadius.circular(radius),
       ),
     );
   }
 
   Widget _buildSkeleton() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Title
-          _skeletonBox(width: 200, height: 28, radius: 6),
-          const SizedBox(height: 8),
-          _skeletonBox(width: 260, height: 10, radius: 4),
-          const SizedBox(height: AppSpacing.md),
+    return FadeTransition(
+      opacity: _shimmerAnim,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Title
+            _skeletonBox(width: 200, height: 28, radius: 6),
+            const SizedBox(height: 8),
+            _skeletonBox(width: 260, height: 10, radius: 4),
+            const SizedBox(height: AppSpacing.md),
 
-          // Profile card skeleton
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: AppColors.lightCardBackground,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              border: Border.all(color: AppColors.lightCardBorder),
-            ),
-            child: Row(
-              children: [
-                AnimatedBuilder(
-                  animation: _shimmerAnim,
-                  builder: (_, __) => Opacity(
-                    opacity: _shimmerAnim.value,
-                    child: Container(
-                      width: 52,
-                      height: 52,
-                      decoration: const BoxDecoration(
-                        color: AppColors.lightCardBorder,
-                        shape: BoxShape.circle,
-                      ),
+            // Profile card skeleton
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.lightCardBackground,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(color: AppColors.lightCardBorder),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: const BoxDecoration(
+                      color: AppColors.lightCardBorder,
+                      shape: BoxShape.circle,
                     ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _skeletonBox(width: 160, height: 16, radius: 4),
-                      const SizedBox(height: 8),
-                      _skeletonBox(width: 220, height: 11, radius: 4),
-                      const SizedBox(height: 6),
-                      _skeletonBox(width: 140, height: 9, radius: 4),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-
-          // Encryption card skeleton
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: AppColors.lightCardBackground,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              border: Border.all(color: AppColors.lightCardBorder),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _skeletonBox(width: 220, height: 16, radius: 4),
-                const SizedBox(height: 10),
-                _skeletonBox(height: 11),
-                const SizedBox(height: 5),
-                _skeletonBox(width: 260, height: 11, radius: 4),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-
-          // Toggle card skeleton
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.lightCardBackground,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              border: Border.all(color: AppColors.lightCardBorder),
-            ),
-            child: Column(
-              children: List.generate(3, (i) => Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.md, vertical: 16),
-                    child: Row(
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _skeletonBox(width: 140, height: 14, radius: 4),
-                              const SizedBox(height: 6),
-                              _skeletonBox(width: 200, height: 10, radius: 4),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        AnimatedBuilder(
-                          animation: _shimmerAnim,
-                          builder: (_, __) => Opacity(
-                            opacity: _shimmerAnim.value,
-                            child: Container(
-                              width: 44,
-                              height: 24,
-                              decoration: BoxDecoration(
-                                color: AppColors.lightCardBorder,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                        ),
+                        _skeletonBox(width: 160, height: 16, radius: 4),
+                        const SizedBox(height: 8),
+                        _skeletonBox(width: 220, height: 11, radius: 4),
+                        const SizedBox(height: 6),
+                        _skeletonBox(width: 140, height: 9, radius: 4),
                       ],
                     ),
                   ),
-                  if (i < 2) const Divider(color: AppColors.lightCardBorder, height: 1),
                 ],
-              )),
+              ),
             ),
-          ),
+            const SizedBox(height: AppSpacing.md),
+
+            // Encryption card skeleton
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.lightCardBackground,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(color: AppColors.lightCardBorder),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _skeletonBox(width: 220, height: 16, radius: 4),
+                  const SizedBox(height: 10),
+                  _skeletonBox(height: 11),
+                  const SizedBox(height: 5),
+                  _skeletonBox(width: 260, height: 11, radius: 4),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+
+            // Toggle card skeleton
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.lightCardBackground,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(color: AppColors.lightCardBorder),
+              ),
+              child: Column(
+                children: List.generate(3, (i) => Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.md, vertical: 16),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _skeletonBox(width: 140, height: 14, radius: 4),
+                                const SizedBox(height: 6),
+                                _skeletonBox(width: 200, height: 10, radius: 4),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Container(
+                            width: 44,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              color: AppColors.lightCardBorder,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (i < 2) const Divider(color: AppColors.lightCardBorder, height: 1),
+                  ],
+                )),
+              ),
+            ),
           const SizedBox(height: AppSpacing.lg),
 
           // PDF report card skeleton
@@ -267,8 +261,9 @@ class SettingsViewState extends State<SettingsView>
           _skeletonBox(height: 50, radius: AppSpacing.radiusMd),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Future<void> _onBiometricLockToggled(bool value) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -386,7 +381,136 @@ class SettingsViewState extends State<SettingsView>
     }
   }
 
-  Future<void> _exportDataJson() async {
+  // ── Encrypted Backup Vault (Password-Protected AES-256-CTR + HMAC-SHA256) ──
+
+  Future<void> _exportEncryptedBackupVault() async {
+    final passphrase = await showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => const _CreateEncryptedBackupDialog(),
+    );
+
+    if (passphrase == null || passphrase.isEmpty || !mounted) return;
+
+    try {
+      final encryptedVault = await _repository.exportEncryptedVault(passphrase: passphrase);
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.lightCardBackground,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+          ),
+          title: Text(
+            'Encrypted Vault Ready',
+            style: AppTypography.brandTitle(fontSize: 20),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Your encrypted vault is secured and cannot be read without your password:',
+                  style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: AppColors.lightBackground,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                    border: Border.all(color: AppColors.lightCardBorder),
+                  ),
+                  child: Text(
+                    encryptedVault,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 10,
+                      color: AppColors.textMain,
+                    ),
+                    maxLines: 8,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('CLOSE', style: AppTypography.brandTagline(color: AppColors.textMuted, fontSize: 11)),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.dropCoral),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: encryptedVault));
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Encrypted vault copied to clipboard! Keep your password safe.'),
+                    backgroundColor: AppColors.dropCoral,
+                  ),
+                );
+              },
+              icon: const Icon(Icons.copy, size: 14, color: Colors.white),
+              label: Text('COPY ENCRYPTED VAULT', style: AppTypography.brandTagline(color: Colors.white, fontSize: 11)),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to generate encrypted vault: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _importEncryptedBackupVault() async {
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogCtx) => const _RestoreEncryptedBackupDialog(),
+    );
+
+    if (result == null || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final res = await _repository.importEncryptedVault(
+        vaultJsonString: result['vault']!,
+        passphrase: result['pass']!,
+      );
+      await _loadData();
+
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Vault decrypted & restored! ${res['periods']} period days & ${res['symptoms']} symptoms imported.'),
+            backgroundColor: AppColors.dropCoral,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Decryption / authentication failed: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  // ── Unencrypted Plaintext Export & Import (With Explicit Warning) ──
+
+  Future<void> _exportUnencryptedJson() async {
     try {
       final jsonStr = await _repository.exportUserDataJson();
       if (!mounted) return;
@@ -398,23 +522,39 @@ class SettingsViewState extends State<SettingsView>
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
           ),
-          title: Text(
-            'Export Data Backup',
-            style: AppTypography.brandTitle(fontSize: 20),
+          title: Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 22),
+              const SizedBox(width: 8),
+              Text(
+                'Unencrypted Data Export',
+                style: AppTypography.brandTitle(fontSize: 18),
+              ),
+            ],
           ),
           content: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'Your raw JSON backup payload (keep this data safe):',
-                  style: AppTypography.body(
-                    fontSize: 12,
-                    color: AppColors.textMuted,
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                    border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    'SECURITY WARNING: This export contains unencrypted plaintext health data. Anyone with access to this text or clipboard can read your intimate menstrual and symptom entries. Use "Create Encrypted Backup" for protected storage.',
+                    style: AppTypography.body(fontSize: 11, color: Colors.deepOrange, fontWeight: FontWeight.w600),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Raw JSON payload:',
+                  style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
+                ),
+                const SizedBox(height: 4),
                 Container(
                   padding: const EdgeInsets.all(AppSpacing.sm),
                   decoration: BoxDecoration(
@@ -429,7 +569,7 @@ class SettingsViewState extends State<SettingsView>
                       fontSize: 10,
                       color: AppColors.textMain,
                     ),
-                    maxLines: 10,
+                    maxLines: 8,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -439,36 +579,22 @@ class SettingsViewState extends State<SettingsView>
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text(
-                'CLOSE',
-                style: AppTypography.brandTagline(
-                  color: AppColors.textMuted,
-                  fontSize: 11,
-                ),
-              ),
+              child: Text('CLOSE', style: AppTypography.brandTagline(color: AppColors.textMuted, fontSize: 11)),
             ),
             ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.dropCoral,
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[800]),
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: jsonStr));
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Backup copied to clipboard — keep this data safe!'),
-                    backgroundColor: AppColors.dropCoral,
+                    content: Text('Unencrypted data copied to clipboard. Keep this data secure!'),
+                    backgroundColor: Colors.orange,
                   ),
                 );
               },
               icon: const Icon(Icons.copy, size: 14, color: Colors.white),
-              label: Text(
-                'COPY JSON',
-                style: AppTypography.brandTagline(
-                  color: Colors.white,
-                  fontSize: 11,
-                ),
-              ),
+              label: Text('COPY UNENCRYPTED JSON', style: AppTypography.brandTagline(color: Colors.white, fontSize: 11)),
             ),
           ],
         ),
@@ -477,118 +603,12 @@ class SettingsViewState extends State<SettingsView>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to export data backup: $e'),
+            content: Text('Failed to export unencrypted data: $e'),
             backgroundColor: Colors.redAccent,
           ),
         );
       }
     }
-  }
-
-  Future<void> _importDataJson() async {
-    final TextEditingController importController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.lightCardBackground,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        ),
-        title: Text(
-          'Import Data Backup',
-          style: AppTypography.brandTitle(fontSize: 20),
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Paste your raw JSON backup payload below to restore your health data:',
-                style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              TextField(
-                controller: importController,
-                maxLines: 8,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 10, color: AppColors.textMain),
-                decoration: InputDecoration(
-                  hintText: '{"profile": {...}, "period_entries": [...]}',
-                  hintStyle: AppTypography.body(fontSize: 11, color: AppColors.textMuted),
-                  filled: true,
-                  fillColor: AppColors.lightBackground,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                    borderSide: const BorderSide(color: AppColors.lightCardBorder),
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () async {
-                    final data = await Clipboard.getData(Clipboard.kTextPlain);
-                    if (data != null && data.text != null) {
-                      importController.text = data.text!;
-                    }
-                  },
-                  icon: const Icon(Icons.paste, size: 14, color: AppColors.dropCoral),
-                  label: Text('PASTE FROM CLIPBOARD', style: AppTypography.brandTagline(color: AppColors.dropCoral, fontSize: 10)),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('CANCEL', style: AppTypography.brandTagline(color: AppColors.textMuted, fontSize: 11)),
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.dropCoral),
-            onPressed: () async {
-              final jsonStr = importController.text.trim();
-              if (jsonStr.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please paste a valid JSON backup string.'),
-                    backgroundColor: AppColors.petalRose,
-                  ),
-                );
-                return;
-              }
-
-              final nav = Navigator.of(context);
-              final messenger = ScaffoldMessenger.of(context);
-
-              try {
-                final result = await _repository.importUserDataJson(jsonStr);
-                nav.pop();
-                await _loadData();
-
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text('Backup restored successfully! ${result['periods']} period days & ${result['symptoms']} symptoms imported.'),
-                    backgroundColor: AppColors.dropCoral,
-                  ),
-                );
-              } catch (e) {
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text('Failed to import backup payload: $e'),
-                    backgroundColor: Colors.redAccent,
-                  ),
-                );
-              }
-            },
-            icon: const Icon(Icons.upload, size: 14, color: Colors.white),
-            label: Text('RESTORE BACKUP', style: AppTypography.brandTagline(color: Colors.white, fontSize: 11)),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _confirmWipeData() async {
@@ -637,7 +657,7 @@ class SettingsViewState extends State<SettingsView>
                   ),
                 );
                 nav.pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const OnboardingView()),
+                  MaterialPageRoute(builder: (_) => const AppStartupWrapper()),
                   (route) => false,
                 );
               } catch (e) {
@@ -757,6 +777,80 @@ class SettingsViewState extends State<SettingsView>
           ),
           const SizedBox(height: AppSpacing.md),
 
+          // Prominent Cycle History Action Card at Top
+          Material(
+            color: AppColors.lightCardBackground,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const CycleHistoryView()),
+                );
+                refresh();
+              },
+              child: Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                  border: Border.all(
+                    color: AppColors.dropCoral.withValues(alpha: 0.5),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.dropCoral.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.petalRose.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.history_toggle_off_rounded,
+                        color: AppColors.dropCoral,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Cycle History & Summary Stats',
+                            style: AppTypography.brandTitle(fontSize: 16),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'View past period trends, cycle lengths & stats',
+                            style: AppTypography.body(
+                              fontSize: 12,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      color: AppColors.dropCoral,
+                      size: 16,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+
           // Encryption Security Card
           Container(
             padding: const EdgeInsets.all(AppSpacing.md),
@@ -800,6 +894,119 @@ class SettingsViewState extends State<SettingsView>
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+
+          // 100% Local Encrypted Reminders Hub Card
+          Material(
+            color: AppColors.lightCardBackground,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              onTap: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const NotificationSettingsView()),
+                );
+                final updated = await LocalNotificationService.instance.getSettings();
+                if (mounted) {
+                  setState(() => _notifSettings = updated);
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                  border: Border.all(color: AppColors.lightCardBorder),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.dropCoral.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.notifications_active_rounded,
+                        color: AppColors.dropCoral,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                'Notifications & Alerts',
+                                style: AppTypography.brandTitle(fontSize: 16),
+                              ),
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: !_osNotifsEnabled
+                                      ? AppColors.dropCoral.withValues(alpha: 0.15)
+                                      : (_notifSettings.periodAlertEnabled ||
+                                              _notifSettings.dailyLoggingReminderEnabled ||
+                                              _notifSettings.hydrationReminderEnabled)
+                                          ? AppColors.sageGreen.withValues(alpha: 0.15)
+                                          : AppColors.textMuted.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  !_osNotifsEnabled
+                                      ? 'BLOCKED'
+                                      : (_notifSettings.periodAlertEnabled ||
+                                              _notifSettings.dailyLoggingReminderEnabled ||
+                                              _notifSettings.hydrationReminderEnabled)
+                                          ? 'ACTIVE'
+                                          : 'PAUSED',
+                                  style: AppTypography.brandTagline(
+                                    color: !_osNotifsEnabled
+                                        ? AppColors.dropCoral
+                                        : (_notifSettings.periodAlertEnabled ||
+                                                _notifSettings.dailyLoggingReminderEnabled ||
+                                                _notifSettings.hydrationReminderEnabled)
+                                            ? AppColors.deepPlum
+                                            : AppColors.textMuted,
+                                    fontSize: 9,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Period prediction, ovulation, daily logging, hydration & article alerts',
+                            style: AppTypography.body(
+                              fontSize: 11,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 14,
+                      color: AppColors.textMuted,
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -876,12 +1083,13 @@ class SettingsViewState extends State<SettingsView>
                     ),
                     value: _screenSecurityEnabled,
                     onChanged: (val) async {
+                      final messenger = ScaffoldMessenger.of(context);
                       setState(() {
                         _screenSecurityEnabled = val;
                       });
                       await ScreenSecurityService.instance.setScreenSecurityEnabled(val);
                       if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        messenger.showSnackBar(
                           SnackBar(
                             content: Text(
                               val
@@ -891,6 +1099,42 @@ class SettingsViewState extends State<SettingsView>
                             behavior: SnackBarBehavior.floating,
                           ),
                         );
+                      }
+                    },
+                  ),
+                  const Divider(color: AppColors.lightCardBorder, height: 1),
+                  SwitchListTile(
+                    activeThumbColor: AppColors.waterBlue,
+                    title: Text(
+                      'Pregnancy Tracking Mode',
+                      style: AppTypography.body(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(
+                      _isPregnancyModeEnabled
+                          ? 'Pregnancy tab is ENABLED on your dashboard'
+                          : 'Pregnancy tab is HIDDEN from your dashboard',
+                      style: AppTypography.body(
+                        fontSize: 11,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    value: _isPregnancyModeEnabled,
+                    onChanged: (val) async {
+                      setState(() => _isPregnancyModeEnabled = val);
+                      if (_profile != null) {
+                        final updated = _profile!.copyWith(
+                          isPregnancyModeEnabled: val,
+                          preferredGoal: (!val && _profile!.appMode == AppMode.pregnancy)
+                              ? AppMode.trackCycle.name
+                              : (val && _profile!.appMode != AppMode.pregnancy)
+                                  ? AppMode.pregnancy.name
+                                  : _profile!.preferredGoal,
+                        );
+                        await _repository.saveUserProfile(updated);
+                        await _loadData();
                       }
                     },
                   ),
@@ -974,7 +1218,7 @@ class SettingsViewState extends State<SettingsView>
           ),
           const SizedBox(height: AppSpacing.lg),
 
-          // Legal & History section
+          // Legal section
           Material(
             color: AppColors.lightCardBackground,
             borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
@@ -986,18 +1230,6 @@ class SettingsViewState extends State<SettingsView>
               ),
               child: Column(
                 children: [
-                  ListTile(
-                    leading: const Icon(Icons.history, color: AppColors.dropCoral),
-                    title: Text('Cycle History & Summary Stats', style: AppTypography.body(fontSize: 14, fontWeight: FontWeight.w600)),
-                    trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
-                    onTap: () async {
-                      await Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const CycleHistoryView()),
-                      );
-                      refresh();
-                    },
-                  ),
-                  const Divider(color: AppColors.lightCardBorder, height: 1),
                   ListTile(
                     leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.dropCoral),
                     title: Text('Privacy Policy', style: AppTypography.body(fontSize: 14, fontWeight: FontWeight.w600)),
@@ -1025,7 +1257,7 @@ class SettingsViewState extends State<SettingsView>
           ),
           const SizedBox(height: AppSpacing.lg),
 
-          // Export Backup Button
+          // Encrypted Backup Vault Button (Primary)
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -1036,10 +1268,10 @@ class SettingsViewState extends State<SettingsView>
                   borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                 ),
               ),
-              onPressed: _exportDataJson,
-              icon: const Icon(Icons.download, color: Colors.white, size: 18),
+              onPressed: _exportEncryptedBackupVault,
+              icon: const Icon(Icons.lock_outline, color: Colors.white, size: 18),
               label: Text(
-                'EXPORT DATA BACKUP (JSON)',
+                'CREATE ENCRYPTED BACKUP VAULT',
                 style: AppTypography.brandTagline(
                   color: Colors.white,
                   fontSize: 11,
@@ -1049,7 +1281,7 @@ class SettingsViewState extends State<SettingsView>
           ),
           const SizedBox(height: AppSpacing.sm),
 
-          // Import Backup Button
+          // Restore Encrypted Vault Button
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -1060,13 +1292,33 @@ class SettingsViewState extends State<SettingsView>
                   borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                 ),
               ),
-              onPressed: _importDataJson,
-              icon: const Icon(Icons.upload, color: Colors.white, size: 18),
+              onPressed: _importEncryptedBackupVault,
+              icon: const Icon(Icons.key_rounded, color: Colors.white, size: 18),
               label: Text(
-                'IMPORT DATA BACKUP (JSON)',
+                'RESTORE ENCRYPTED VAULT',
                 style: AppTypography.brandTagline(
                   color: Colors.white,
                   fontSize: 11,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+
+          // Unencrypted Export Button (Secondary with warning)
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.all(AppSpacing.sm),
+              ),
+              onPressed: _exportUnencryptedJson,
+              icon: const Icon(Icons.file_download_outlined, size: 16, color: AppColors.textMuted),
+              label: Text(
+                'EXPORT UNENCRYPTED JSON (PLAINTEXT)',
+                style: AppTypography.brandTagline(
+                  color: AppColors.textMuted,
+                  fontSize: 10,
                 ),
               ),
             ),
@@ -1098,6 +1350,242 @@ class SettingsViewState extends State<SettingsView>
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CreateEncryptedBackupDialog extends StatefulWidget {
+  const _CreateEncryptedBackupDialog();
+
+  @override
+  State<_CreateEncryptedBackupDialog> createState() => _CreateEncryptedBackupDialogState();
+}
+
+class _CreateEncryptedBackupDialogState extends State<_CreateEncryptedBackupDialog> {
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
+  bool _obscure = true;
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.lightCardBackground,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      ),
+      title: Row(
+        children: [
+          const Icon(Icons.shield_outlined, color: AppColors.dropCoral, size: 22),
+          const SizedBox(width: 8),
+          Text(
+            'Create Encrypted Backup',
+            style: AppTypography.brandTitle(fontSize: 18),
+          ),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Your backup will be encrypted using PBKDF2-HMAC-SHA256 (20,000 iterations) + AES-256-CTR with HMAC-SHA256 authentication. Set a strong password to protect your intimate health data.',
+              style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              controller: _passwordController,
+              obscureText: _obscure,
+              decoration: InputDecoration(
+                labelText: 'Backup Password (min 8 chars)',
+                labelStyle: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
+                filled: true,
+                fillColor: AppColors.lightBackground,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                  borderSide: const BorderSide(color: AppColors.lightCardBorder),
+                ),
+                suffixIcon: IconButton(
+                  icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off, size: 18),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            TextField(
+              controller: _confirmPasswordController,
+              obscureText: _obscure,
+              decoration: InputDecoration(
+                labelText: 'Confirm Password',
+                labelStyle: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
+                filled: true,
+                fillColor: AppColors.lightBackground,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                  borderSide: const BorderSide(color: AppColors.lightCardBorder),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text('CANCEL', style: AppTypography.brandTagline(color: AppColors.textMuted, fontSize: 11)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: AppColors.dropCoral),
+          onPressed: () {
+            final p1 = _passwordController.text.trim();
+            final p2 = _confirmPasswordController.text.trim();
+            if (p1.length < 8) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Password must be at least 8 characters long.'),
+                  backgroundColor: AppColors.petalRose,
+                ),
+              );
+              return;
+            }
+            if (p1 != p2) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Passwords do not match.'),
+                  backgroundColor: AppColors.petalRose,
+                ),
+              );
+              return;
+            }
+            Navigator.of(context).pop(p1);
+          },
+          child: Text('ENCRYPT & EXPORT', style: AppTypography.brandTagline(color: Colors.white, fontSize: 11)),
+        ),
+      ],
+    );
+  }
+}
+
+class _RestoreEncryptedBackupDialog extends StatefulWidget {
+  const _RestoreEncryptedBackupDialog();
+
+  @override
+  State<_RestoreEncryptedBackupDialog> createState() => _RestoreEncryptedBackupDialogState();
+}
+
+class _RestoreEncryptedBackupDialogState extends State<_RestoreEncryptedBackupDialog> {
+  final TextEditingController _vaultController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _obscure = true;
+
+  @override
+  void dispose() {
+    _vaultController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.lightCardBackground,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      ),
+      title: Text(
+        'Restore Encrypted Vault',
+        style: AppTypography.brandTitle(fontSize: 18),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Paste your encrypted vault payload and enter your password to authenticate and restore data:',
+              style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            TextField(
+              controller: _vaultController,
+              maxLines: 5,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+              decoration: InputDecoration(
+                hintText: 'Paste {"safe_bloom_backup_version": 1, ...}',
+                filled: true,
+                fillColor: AppColors.lightBackground,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                  borderSide: const BorderSide(color: AppColors.lightCardBorder),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () async {
+                  final data = await Clipboard.getData(Clipboard.kTextPlain);
+                  if (data != null && data.text != null) {
+                    _vaultController.text = data.text!;
+                  }
+                },
+                icon: const Icon(Icons.paste, size: 14, color: AppColors.dropCoral),
+                label: Text('PASTE VAULT', style: AppTypography.brandTagline(color: AppColors.dropCoral, fontSize: 10)),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            TextField(
+              controller: _passwordController,
+              obscureText: _obscure,
+              decoration: InputDecoration(
+                labelText: 'Vault Password',
+                filled: true,
+                fillColor: AppColors.lightBackground,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                  borderSide: const BorderSide(color: AppColors.lightCardBorder),
+                ),
+                suffixIcon: IconButton(
+                  icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off, size: 18),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text('CANCEL', style: AppTypography.brandTagline(color: AppColors.textMuted, fontSize: 11)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: AppColors.deepPlum),
+          onPressed: () {
+            final vault = _vaultController.text.trim();
+            final pass = _passwordController.text.trim();
+            if (vault.isEmpty || pass.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Please provide both the vault text and the password.'),
+                  backgroundColor: AppColors.petalRose,
+                ),
+              );
+              return;
+            }
+            Navigator.of(context).pop({'vault': vault, 'pass': pass});
+          },
+          child: Text('AUTHENTICATE & RESTORE', style: AppTypography.brandTagline(color: Colors.white, fontSize: 11)),
+        ),
+      ],
     );
   }
 }

@@ -62,9 +62,11 @@ class _BiometricLockScreenState extends State<BiometricLockScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.lightBackground,
-      body: SafeArea(
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        backgroundColor: AppColors.lightBackground,
+        body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
           child: Column(
@@ -243,6 +245,7 @@ class _BiometricLockScreenState extends State<BiometricLockScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

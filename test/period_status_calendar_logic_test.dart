@@ -59,6 +59,8 @@ CalendarDayStatusTest resolveDayStatus({
       return CalendarDayStatusTest.ovulation;
     case CyclePhase.luteal:
       return CalendarDayStatusTest.luteal;
+    case CyclePhase.overdue:
+      return CalendarDayStatusTest.regular;
   }
 }
 

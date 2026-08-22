@@ -21,7 +21,7 @@ class EditPeriodView extends StatefulWidget {
 }
 
 class _EditPeriodViewState extends State<EditPeriodView> {
-  final TrackingRepository _repository = TrackingRepository();
+  final TrackingRepository _repository = TrackingRepository.instance;
   late DateTime _selectedDate;
   late FlowLevel _selectedFlow;
   late TextEditingController _notesController;
@@ -236,24 +236,31 @@ class _EditPeriodViewState extends State<EditPeriodView> {
                   final isSelected = _selectedFlow == flow;
                   return Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                      child: ChoiceChip(
-                        padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                        label: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            flow.name.toUpperCase(),
-                            style: AppTypography.body(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: isSelected ? Colors.white : AppColors.textMain,
+                      padding: const EdgeInsets.symmetric(horizontal: 2.5),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _selectedFlow = flow),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            color: isSelected ? AppColors.dropCoral : AppColors.lightCardBackground,
+                            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                            border: Border.all(
+                              color: isSelected ? AppColors.dropCoral : AppColors.lightCardBorder,
+                              width: 1.2,
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              flow.name.toUpperCase(),
+                              style: AppTypography.body(
+                                fontSize: 10,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                color: isSelected ? Colors.white : AppColors.textMain,
+                              ),
                             ),
                           ),
                         ),
-                        selected: isSelected,
-                        selectedColor: AppColors.dropCoral,
-                        backgroundColor: AppColors.lightCardBackground,
-                        onSelected: (val) => setState(() => _selectedFlow = flow),
                       ),
                     ),
                   );

@@ -1,4 +1,4 @@
-enum SymptomCategory { pain, mood, energy, sleep, skin, intimate, exercise, custom }
+enum SymptomCategory { pain, mood, energy, sleep, skin, intimate, exercise, cervicalFluid, biomarker, custom }
 
 class SymptomEntry {
   final String id;

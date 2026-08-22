@@ -18,7 +18,7 @@ class CycleHistoryView extends StatefulWidget {
 }
 
 class _CycleHistoryViewState extends State<CycleHistoryView> {
-  final TrackingRepository _repository = TrackingRepository();
+  final TrackingRepository _repository = TrackingRepository.instance;
   bool _isLoading = true;
   UserProfile? _profile;
   List<List<PeriodEntry>> _cycles = [];
@@ -178,14 +178,16 @@ class _CycleHistoryViewState extends State<CycleHistoryView> {
                   separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
                   itemBuilder: (context, index) {
                     final cycle = _cycles[index];
-                    final start = cycle.first.timestamp;
-                    final end = cycle.last.timestamp;
-                    final periodDays = cycle.length;
+                    final start = CycleGroupUtils.getCycleStartDate(cycle);
+                    final end = CycleGroupUtils.getCycleEndDate(cycle);
+                    final periodDays = CycleGroupUtils.getCycleActiveDurationDays(cycle);
 
                     String cycleLenStr = 'Current';
                     if (index < _cycles.length - 1) {
-                      final prevCycleStart = _cycles[index + 1].first.timestamp;
-                      final cycleDays = start.difference(prevCycleStart).inDays;
+                      final prevCycleStart = CycleGroupUtils.getCycleStartDate(_cycles[index + 1]);
+                      final d1 = DateTime(prevCycleStart.year, prevCycleStart.month, prevCycleStart.day);
+                      final d2 = DateTime(start.year, start.month, start.day);
+                      final cycleDays = d2.difference(d1).inDays;
                       cycleLenStr = '$cycleDays-day cycle';
                     }
 

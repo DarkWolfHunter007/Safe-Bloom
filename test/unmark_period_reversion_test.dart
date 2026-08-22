@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:safe_bloom/features/tracking/domain/entities/period_entry.dart';
 import 'package:safe_bloom/features/tracking/domain/entities/user_profile.dart';
 import 'package:safe_bloom/features/tracking/domain/services/cycle_calculator.dart';
 

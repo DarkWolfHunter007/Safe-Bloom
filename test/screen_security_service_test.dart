@@ -24,6 +24,12 @@ void main() {
       if (methodCall.method == 'isScreenSecurityEnabled') {
         return false;
       }
+      if (methodCall.method == 'areNotificationsEnabled') {
+        return true;
+      }
+      if (methodCall.method == 'openNotificationSettings') {
+        return true;
+      }
       return null;
     });
 

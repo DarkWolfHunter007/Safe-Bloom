@@ -23,4 +23,5 @@ abstract class AppColors {
   // Feature Accents
   static const Color waterBlue = Color(0xFF3A86EF);
   static const Color energyYellow = Color(0xFFFFBE0B);
+  static const Color sageGreen = Color(0xFF2EC4B6);
 }

@@ -6,6 +6,7 @@ enum CyclePhase {
   follicular,
   ovulation,
   luteal,
+  overdue,
 }
 
 class CycleCalculator {
@@ -19,6 +20,8 @@ class CycleCalculator {
         return 'Ovulation Window';
       case CyclePhase.luteal:
         return 'Luteal Phase';
+      case CyclePhase.overdue:
+        return 'Cycle Overdue';
     }
   }
 
@@ -32,6 +35,8 @@ class CycleCalculator {
         return 'LH surge releases egg. Peak fertility window and heightened social energy.';
       case CyclePhase.luteal:
         return 'Progesterone rises. Body temperature increases—focus on gentle movement and nutrient-dense foods.';
+      case CyclePhase.overdue:
+        return 'Your cycle has exceeded your typical duration. Fluctuations are normal due to stress, hormonal shifts, sleep, travel, or pregnancy. Log your period when it begins.';
     }
   }
 
@@ -44,14 +49,22 @@ class CycleCalculator {
   }
 
   static CyclePhase getCyclePhase(int rawCycleDay, {int avgCycleLength = 28, int avgPeriodLength = 5}) {
-    final cycleDay = ((rawCycleDay - 1) % avgCycleLength) + 1;
-    final ovulationDay = avgCycleLength - 14;
-
-    if (cycleDay <= avgPeriodLength) {
+    if (rawCycleDay < 1) {
       return CyclePhase.menstrual;
-    } else if (cycleDay < (ovulationDay - 2)) {
+    }
+    if (rawCycleDay > avgCycleLength) {
+      return CyclePhase.overdue;
+    }
+
+    final ovulationDay = avgCycleLength - 14;
+    final fertileStart = ovulationDay - 2;
+    final fertileEnd = ovulationDay + 2;
+
+    if (rawCycleDay <= avgPeriodLength) {
+      return CyclePhase.menstrual;
+    } else if (rawCycleDay < fertileStart) {
       return CyclePhase.follicular;
-    } else if (cycleDay <= (ovulationDay + 2)) {
+    } else if (rawCycleDay <= fertileEnd) {
       return CyclePhase.ovulation;
     } else {
       return CyclePhase.luteal;
@@ -62,25 +75,13 @@ class CycleCalculator {
     final today = now ?? DateTime.now();
     final cleanToday = DateTime(today.year, today.month, today.day);
     final cleanStart = DateTime(lastPeriodStart.year, lastPeriodStart.month, lastPeriodStart.day);
-    
-    DateTime nextPeriod = cleanStart.add(Duration(days: avgCycleLength));
-    while (nextPeriod.isBefore(cleanToday)) {
-      nextPeriod = nextPeriod.add(Duration(days: avgCycleLength));
-    }
-    
-    return nextPeriod.difference(cleanToday).inDays;
+    final expectedNext = cleanStart.add(Duration(days: avgCycleLength));
+    return expectedNext.difference(cleanToday).inDays;
   }
 
   static DateTime getNextPeriodStartDate(DateTime lastPeriodStart, {int avgCycleLength = 28, DateTime? now}) {
-    final today = now ?? DateTime.now();
-    final cleanToday = DateTime(today.year, today.month, today.day);
     final cleanStart = DateTime(lastPeriodStart.year, lastPeriodStart.month, lastPeriodStart.day);
-
-    DateTime nextPeriod = cleanStart.add(Duration(days: avgCycleLength));
-    while (nextPeriod.isBefore(cleanToday)) {
-      nextPeriod = nextPeriod.add(Duration(days: avgCycleLength));
-    }
-    return nextPeriod;
+    return cleanStart.add(Duration(days: avgCycleLength));
   }
 
   /// Generates predicted period dates for calendar rendering
@@ -104,35 +105,76 @@ class CycleCalculator {
     return dates;
   }
 
+  /// Checks if a date is the peak ovulation day for a given cycle anchor
+  static bool isPeakOvulationDay(DateTime date, DateTime cycleAnchor, {int avgCycleLength = 28}) {
+    final rawDay = getCurrentCycleDay(cycleAnchor, now: date);
+    if (rawDay < 1 || rawDay > avgCycleLength) {
+      return false;
+    }
+    final peakDay = avgCycleLength - 14;
+    return rawDay == peakDay;
+  }
+
+  /// Returns predicted peak ovulation dates for calendar rendering
+  static Set<DateTime> getPredictedPeakOvulationDates({
+    required DateTime lastPeriodStart,
+    int avgCycleLength = 28,
+    int monthsAhead = 6,
+  }) {
+    final Set<DateTime> dates = {};
+    DateTime currentStart = DateTime(lastPeriodStart.year, lastPeriodStart.month, lastPeriodStart.day);
+    final peakOffset = (avgCycleLength - 14) - 1; // 0-indexed offset from cycle day 1
+
+    for (int m = 0; m < monthsAhead; m++) {
+      final peakDate = currentStart.add(Duration(days: peakOffset));
+      dates.add(DateTime(peakDate.year, peakDate.month, peakDate.day));
+      currentStart = currentStart.add(Duration(days: avgCycleLength));
+    }
+
+    return dates;
+  }
+
   /// Calculates dynamic averages from logged historical periods
-  static Map<String, int> calculateAveragesFromEntries(List<PeriodEntry> entries) {
+  static Map<String, int> calculateAveragesFromEntries(
+    List<PeriodEntry> entries, {
+    int fallbackCycleLength = 28,
+    int fallbackPeriodLength = 5,
+  }) {
     if (entries.isEmpty) {
-      return {'avgCycleLength': 28, 'avgPeriodLength': 5};
+      return {'avgCycleLength': fallbackCycleLength, 'avgPeriodLength': fallbackPeriodLength};
     }
 
     final cycles = CycleGroupUtils.groupIntoCycles(entries);
+    if (cycles.isEmpty) {
+      return {'avgCycleLength': fallbackCycleLength, 'avgPeriodLength': fallbackPeriodLength};
+    }
 
-    // Average period length
-    final periodLengths = cycles.map((c) => c.length).toList();
+    // Average period length across genuine menstrual cycles
+    final periodLengths = cycles.map((c) => CycleGroupUtils.getCycleActiveDurationDays(c)).toList();
     final avgPeriodLength = periodLengths.isNotEmpty
         ? (periodLengths.reduce((a, b) => a + b) / periodLengths.length).round()
-        : 5;
+        : fallbackPeriodLength;
 
-    // Average cycle length between cycle start dates
+    // Average cycle length between consecutive genuine cycle start dates
     if (cycles.length < 2) {
-      return {'avgCycleLength': 28, 'avgPeriodLength': avgPeriodLength};
+      return {
+        'avgCycleLength': fallbackCycleLength,
+        'avgPeriodLength': avgPeriodLength.clamp(2, 10),
+      };
     }
 
     final List<int> cycleLengths = [];
     for (int i = 0; i < cycles.length - 1; i++) {
-      final start1 = cycles[i].first.timestamp;
-      final start2 = cycles[i + 1].first.timestamp;
-      cycleLengths.add(start2.difference(start1).inDays);
+      final start1 = CycleGroupUtils.getCycleStartDate(cycles[i]);
+      final start2 = CycleGroupUtils.getCycleStartDate(cycles[i + 1]);
+      final d1 = DateTime(start1.year, start1.month, start1.day);
+      final d2 = DateTime(start2.year, start2.month, start2.day);
+      cycleLengths.add(d2.difference(d1).inDays);
     }
 
     final avgCycleLength = cycleLengths.isNotEmpty
         ? (cycleLengths.reduce((a, b) => a + b) / cycleLengths.length).round()
-        : 28;
+        : fallbackCycleLength;
 
     return {
       'avgCycleLength': avgCycleLength.clamp(20, 45),

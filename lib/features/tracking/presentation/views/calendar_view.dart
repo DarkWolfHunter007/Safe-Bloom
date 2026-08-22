@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -30,38 +31,78 @@ class CalendarView extends StatefulWidget {
 }
 
 class CalendarViewState extends State<CalendarView> {
-  final TrackingRepository _repository = TrackingRepository();
+  final TrackingRepository _repository = TrackingRepository.instance;
   bool _isLoading = true;
 
   UserProfile? _profile;
   List<PeriodEntry> _periodEntries = [];
   Map<DateTime, List<SymptomEntry>> _symptomsByDate = {};
+  Set<DateTime> _loggedPeriodDates = {};
+  Set<DateTime> _predictedPeriodDates = {};
+  Set<DateTime> _predictedPeakOvulationDates = {};
+  List<DateTime> _sortedCycleStarts = [];
+
   DateTime _displayMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
   DateTime _selectedDate = DateTime.now();
+
+  // Range Selection for logging past periods (Triggered by Long-Press)
+  DateTime? _rangeStartDate;
+  DateTime? _rangeEndDate;
+
+  Future<void> refresh() async {
+    await _loadData();
+  }
 
   @override
   void initState() {
     super.initState();
-    refresh();
+    _loadData();
   }
 
-  Future<void> refresh() async {
+  Future<void> _loadData() async {
     try {
       final profile = await _repository.getUserProfile();
       final periods = await _repository.getPeriodEntries();
       final symptoms = await _repository.getAllSymptoms();
 
-      final Map<DateTime, List<SymptomEntry>> sMap = {};
+      final Map<DateTime, List<SymptomEntry>> symptomsMap = {};
       for (final s in symptoms) {
-        final key = SafeBloomDateUtils.dateOnly(s.timestamp);
-        sMap.putIfAbsent(key, () => []).add(s);
+        final cleanDate = SafeBloomDateUtils.dateOnly(s.timestamp);
+        symptomsMap.putIfAbsent(cleanDate, () => []).add(s);
       }
+
+      final Set<DateTime> loggedDates = {};
+      for (final p in periods) {
+        loggedDates.add(SafeBloomDateUtils.dateOnly(p.timestamp));
+      }
+
+      final sortedStarts = CycleGroupUtils.groupIntoCycles(periods)
+          .map((c) => SafeBloomDateUtils.dateOnly(CycleGroupUtils.getCycleStartDate(c)))
+          .toList()
+        ..sort((a, b) => a.compareTo(b));
+
+      final predictedDates = CycleCalculator.getPredictedPeriodDates(
+        lastPeriodStart: profile.lastPeriodStart,
+        avgCycleLength: profile.avgCycleLength,
+        avgPeriodLength: profile.avgPeriodLength,
+        monthsAhead: 6,
+      );
+
+      final predictedPeakDates = CycleCalculator.getPredictedPeakOvulationDates(
+        lastPeriodStart: profile.lastPeriodStart,
+        avgCycleLength: profile.avgCycleLength,
+        monthsAhead: 6,
+      );
 
       if (mounted) {
         setState(() {
           _profile = profile;
           _periodEntries = periods;
-          _symptomsByDate = sMap;
+          _symptomsByDate = symptomsMap;
+          _loggedPeriodDates = loggedDates;
+          _sortedCycleStarts = sortedStarts;
+          _predictedPeriodDates = predictedDates;
+          _predictedPeakOvulationDates = predictedPeakDates;
           _isLoading = false;
         });
       }
@@ -70,18 +111,12 @@ class CalendarViewState extends State<CalendarView> {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to refresh calendar data: $e'),
+            content: Text('Failed to load calendar data: $e'),
             backgroundColor: Colors.redAccent,
           ),
         );
       }
     }
-  }
-
-  void _nextMonth() {
-    setState(() {
-      _displayMonth = DateTime(_displayMonth.year, _displayMonth.month + 1, 1);
-    });
   }
 
   void _previousMonth() {
@@ -90,76 +125,37 @@ class CalendarViewState extends State<CalendarView> {
     });
   }
 
-  /// Helper getters for date sets
-  Set<DateTime> get _loggedPeriodDates {
-    return _periodEntries
-        .map((p) => SafeBloomDateUtils.dateOnly(p.timestamp))
-        .toSet();
+  void _nextMonth() {
+    setState(() {
+      _displayMonth = DateTime(_displayMonth.year, _displayMonth.month + 1, 1);
+    });
   }
 
-  Set<DateTime> get _predictedPeriodDates {
-    if (_profile == null) return {};
-    return CycleCalculator.getPredictedPeriodDates(
-      lastPeriodStart: SafeBloomDateUtils.dateOnly(_profile!.lastPeriodStart),
-      avgCycleLength: _profile!.avgCycleLength,
-      avgPeriodLength: _profile!.avgPeriodLength,
-    );
-  }
+  DateTime _getCycleAnchorForDate(DateTime date) {
+    final clean = SafeBloomDateUtils.dateOnly(date);
 
-  DateTime? _rangeStartDate;
-  DateTime? _rangeEndDate;
-
-  /// Finds the cycle start anchor for a given date (past, present, or future)
-  DateTime _getCycleAnchorForDate(DateTime cleanDate) {
-    if (_periodEntries.isEmpty) {
-      return SafeBloomDateUtils.dateOnly(_profile!.lastPeriodStart);
-    }
-
-    final cycles = CycleGroupUtils.groupIntoCycles(_periodEntries);
-    if (cycles.isEmpty) {
-      return SafeBloomDateUtils.dateOnly(_profile!.lastPeriodStart);
-    }
-
-    // Find the latest cycle start date that is <= cleanDate
-    DateTime? anchor;
-    for (final cycle in cycles) {
-      final start = SafeBloomDateUtils.dateOnly(cycle.first.timestamp);
-      if (!start.isAfter(cleanDate)) {
-        anchor = start;
-      } else {
-        break;
+    if (_sortedCycleStarts.isNotEmpty) {
+      for (int i = _sortedCycleStarts.length - 1; i >= 0; i--) {
+        if (!clean.isBefore(_sortedCycleStarts[i])) {
+          return _sortedCycleStarts[i];
+        }
       }
     }
 
-    // If cleanDate is before the very first logged cycle, project backward using avgCycleLength
-    if (anchor == null) {
-      final firstStart = SafeBloomDateUtils.dateOnly(cycles.first.first.timestamp);
-      final daysBeforeFirst = firstStart.difference(cleanDate).inDays;
-      final cycleLen = (_profile?.avgCycleLength ?? 0) > 0 ? _profile!.avgCycleLength : 28;
-      final cyclesAgo = (daysBeforeFirst / cycleLen).ceil();
-      anchor = firstStart.subtract(Duration(days: cyclesAgo * cycleLen));
-    }
-
-    return anchor;
+    return SafeBloomDateUtils.dateOnly(_profile!.lastPeriodStart);
   }
 
-  /// Determines the status of a specific calendar date
   CalendarDayStatus _getDayStatus(DateTime date) {
-    if (_profile == null) return CalendarDayStatus.regular;
-
     final cleanDate = SafeBloomDateUtils.dateOnly(date);
 
-    // 1. CONFIRMED / LOGGED PERIOD (Highest priority)
     if (_loggedPeriodDates.contains(cleanDate)) {
       return CalendarDayStatus.loggedPeriod;
     }
 
-    // 2. PREDICTED PERIOD (Only if NOT explicitly logged by user)
     if (_predictedPeriodDates.contains(cleanDate)) {
       return CalendarDayStatus.predictedPeriod;
     }
 
-    // 3. Cycle phase for non-period days relative to date's cycle anchor
     final anchor = _getCycleAnchorForDate(cleanDate);
     final cycleDay = CycleCalculator.getCurrentCycleDay(anchor, now: cleanDate);
     final phase = CycleCalculator.getCyclePhase(
@@ -170,7 +166,6 @@ class CalendarViewState extends State<CalendarView> {
 
     switch (phase) {
       case CyclePhase.menstrual:
-        // Menstrual phase from raw cycleDay must NOT create a period event if unlogged and unpredicted
         return CalendarDayStatus.regular;
       case CyclePhase.follicular:
         return CalendarDayStatus.follicular;
@@ -178,28 +173,36 @@ class CalendarViewState extends State<CalendarView> {
         return CalendarDayStatus.ovulation;
       case CyclePhase.luteal:
         return CalendarDayStatus.luteal;
+      case CyclePhase.overdue:
+        return CalendarDayStatus.regular;
     }
   }
 
+  /// Single-tap on date cell: selects date cell, or selects end date if range mode is active
   void _onDateCellTapped(DateTime date) {
     final clean = SafeBloomDateUtils.dateOnly(date);
     setState(() {
       _selectedDate = clean;
 
-      if (_rangeStartDate == null || (_rangeStartDate != null && _rangeEndDate != null)) {
-        // Start new range selection
-        _rangeStartDate = clean;
-        _rangeEndDate = null;
-      } else if (_rangeStartDate != null && _rangeEndDate == null) {
-        // Complete range selection if tapped date >= start date
+      // If range selection is active (start date set, waiting for end date)
+      if (_rangeStartDate != null && _rangeEndDate == null) {
         if (!clean.isBefore(_rangeStartDate!)) {
           _rangeEndDate = clean;
         } else {
-          // Restart with new start date
           _rangeStartDate = clean;
-          _rangeEndDate = null;
         }
       }
+    });
+  }
+
+  /// Long-press on date cell: activates range selection mode and sets range start date
+  void _onDateCellLongPressed(DateTime date) {
+    HapticFeedback.mediumImpact();
+    final clean = SafeBloomDateUtils.dateOnly(date);
+    setState(() {
+      _selectedDate = clean;
+      _rangeStartDate = clean;
+      _rangeEndDate = null;
     });
   }
 
@@ -217,6 +220,7 @@ class CalendarViewState extends State<CalendarView> {
       isScrollControlled: true,
       builder: (_) => PeriodLoggerSheet(
         selectedDate: date,
+        initialFlow: existingEntry?.flow,
         onDelete: existingEntry != null
             ? () async {
                 await _repository.deletePeriodEntry(existingEntry.id);
@@ -233,14 +237,15 @@ class CalendarViewState extends State<CalendarView> {
             : null,
         onSave: (flow, symptoms, notes) async {
           try {
-            // Save Period Entry for the selected date
-            final periodEntry = PeriodEntry(
-              id: IdGenerator.newId('cal_period'),
-              timestamp: date,
-              flow: flow,
-              notes: notes,
-            );
-            await _repository.addPeriodEntry(periodEntry);
+            if (flow != null) {
+              final periodEntry = PeriodEntry(
+                id: IdGenerator.newId('cal_period'),
+                timestamp: date,
+                flow: flow,
+                notes: notes,
+              );
+              await _repository.addPeriodEntry(periodEntry);
+            }
 
             // Save Symptom Entries for the selected date
             for (final symptom in symptoms) {
@@ -252,25 +257,16 @@ class CalendarViewState extends State<CalendarView> {
               );
               await _repository.addSymptomEntry(sEntry);
             }
-
-            // Save free-text notes as a custom symptom entry so it appears in history
-            if (notes != null && notes.isNotEmpty) {
-              final notesEntry = SymptomEntry(
-                id: IdGenerator.newId('cal_notes'),
-                timestamp: date,
-                category: SymptomCategory.custom,
-                type: '📝 $notes',
-              );
-              await _repository.addSymptomEntry(notesEntry);
-            }
+            // Notes are already persisted in PeriodEntry.notes above —
+            // no duplicate SymptomEntry needed.
 
             // Refresh state and calendar UI
             await refresh();
 
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Log saved for ${date.day} ${SafeBloomDateUtils.monthAbbr(date.month)} (256-bit AES Encrypted)'),
+                const SnackBar(
+                  content: Text('Calendar log saved securely.'),
                   backgroundColor: AppColors.dropCoral,
                 ),
               );
@@ -279,7 +275,7 @@ class CalendarViewState extends State<CalendarView> {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Failed to save log for selected date: $e'),
+                  content: Text('Failed to save calendar log: $e'),
                   backgroundColor: Colors.redAccent,
                 ),
               );
@@ -305,7 +301,7 @@ class CalendarViewState extends State<CalendarView> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('${entries.length} historical period days logged! Predictions updated.'),
+                content: Text('${entries.length} historical period days logged!'),
                 backgroundColor: AppColors.dropCoral,
               ),
             );
@@ -316,11 +312,15 @@ class CalendarViewState extends State<CalendarView> {
   }
 
   void _openHistoricalPeriodSheetWithRange(DateTime start, DateTime end) {
+    final duration = end.difference(start).inDays + 1;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => HistoricalPeriodSheet(
+        initialStartDate: start,
+        initialDurationDays: duration,
         onSaveEntries: (entries) async {
           for (final entry in entries) {
             await _repository.addPeriodEntry(entry);
@@ -345,7 +345,39 @@ class CalendarViewState extends State<CalendarView> {
   }
 
   Widget _buildRangeActionCard() {
-    if (_rangeStartDate == null || _rangeEndDate == null) return const SizedBox.shrink();
+    if (_rangeStartDate == null) return const SizedBox.shrink();
+
+    if (_rangeEndDate == null) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: AppSpacing.md),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.dropCoral.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+          border: Border.all(color: AppColors.dropCoral, width: 1.5),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                'Range selection active: Tap end date to select period end (${_rangeStartDate!.day} ${SafeBloomDateUtils.monthAbbr(_rangeStartDate!.month)})',
+                style: AppTypography.body(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.dropCoral),
+              ),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.close, size: 18, color: AppColors.dropCoral),
+              onPressed: () => setState(() {
+                _rangeStartDate = null;
+                _rangeEndDate = null;
+              }),
+            ),
+          ],
+        ),
+      );
+    }
+
     final duration = _rangeEndDate!.difference(_rangeStartDate!).inDays + 1;
 
     return Container(
@@ -638,8 +670,9 @@ class CalendarViewState extends State<CalendarView> {
                       cellBorder = Border.all(color: AppColors.dropCoral, width: 2.5);
                     }
 
-                    return GestureDetector(
+                    return BouncingCalendarCell(
                       onTap: () => _onDateCellTapped(date),
+                      onLongPress: () => _onDateCellLongPressed(date),
                       onDoubleTap: () => _openLoggerForSelectedDate(date),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
@@ -651,6 +684,10 @@ class CalendarViewState extends State<CalendarView> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
+                            if (_predictedPeakOvulationDates.contains(date)) ...[
+                              const Icon(Icons.star_rounded, size: 10, color: Color(0xFFD4AF37)),
+                              const SizedBox(height: 1),
+                            ],
                             Text(
                               '$day',
                               style: AppTypography.body(
@@ -704,13 +741,16 @@ class CalendarViewState extends State<CalendarView> {
     String statusDetail;
 
     if (status == CalendarDayStatus.loggedPeriod) {
-      badgeText = 'LOGGED PERIOD';
-      badgeBg = AppColors.dropCoral;
+      final isSpottingOnly = loggedEntry?.flow == FlowLevel.spotting;
+      badgeText = isSpottingOnly ? 'SPOTTING LOGGED' : 'LOGGED PERIOD';
+      badgeBg = isSpottingOnly ? AppColors.petalRose : AppColors.dropCoral;
       badgeFg = Colors.white;
       badgeBorder = null;
-      statusDetail = loggedEntry?.flow != null
-          ? 'Confirmed Period • Flow: ${loggedEntry!.flow.name.toUpperCase()}'
-          : 'Confirmed Period Logged';
+      statusDetail = isSpottingOnly
+          ? 'Spotting logged • Not a confirmed period start'
+          : loggedEntry?.flow != null
+              ? 'Confirmed Period • Flow: ${loggedEntry!.flow.name.toUpperCase()}'
+              : 'Confirmed Period Logged';
     } else if (status == CalendarDayStatus.predictedPeriod) {
       badgeText = 'PREDICTED PERIOD';
       badgeBg = AppColors.dropCoral.withValues(alpha: 0.15);
@@ -725,10 +765,14 @@ class CalendarViewState extends State<CalendarView> {
               ? AppColors.phaseOvulation
               : status == CalendarDayStatus.luteal
                   ? AppColors.phaseLuteal
-                  : AppColors.textMuted;
+                  : phase == CyclePhase.overdue
+                      ? AppColors.petalRose
+                      : AppColors.textMuted;
       badgeFg = Colors.white;
       badgeBorder = null;
-      statusDetail = 'No period logged for this date';
+      statusDetail = phase == CyclePhase.overdue
+          ? 'Cycle day $cycleDay exceeds typical cycle length (${_profile!.avgCycleLength} days). Awaiting period log.'
+          : 'No period logged for this date';
     }
 
     return Container(
@@ -887,6 +931,86 @@ class CalendarViewState extends State<CalendarView> {
         const SizedBox(width: 4),
         Text(label, style: AppTypography.body(fontSize: 11, color: AppColors.textMuted)),
       ],
+    );
+  }
+}
+
+class BouncingCalendarCell extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final VoidCallback onDoubleTap;
+
+  const BouncingCalendarCell({
+    super.key,
+    required this.child,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onDoubleTap,
+  });
+
+  @override
+  State<BouncingCalendarCell> createState() => _BouncingCalendarCellState();
+}
+
+class _BouncingCalendarCellState extends State<BouncingCalendarCell>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 140),
+      reverseDuration: const Duration(milliseconds: 260),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.86).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeOut,
+        reverseCurve: Curves.elasticOut,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _triggerBounce() async {
+    await _controller.forward();
+    if (mounted) {
+      await _controller.reverse();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => _controller.forward(),
+      onTapUp: (_) => _controller.reverse(),
+      onTapCancel: () => _controller.reverse(),
+      onTap: () {
+        _triggerBounce();
+        widget.onTap();
+      },
+      onLongPress: () {
+        _triggerBounce();
+        widget.onLongPress();
+      },
+      onDoubleTap: () {
+        _triggerBounce();
+        widget.onDoubleTap();
+      },
+      child: ScaleTransition(
+        scale: _scaleAnimation,
+        child: widget.child,
+      ),
     );
   }
 }

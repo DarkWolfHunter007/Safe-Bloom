@@ -5,6 +5,8 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import 'package:safe_bloom/features/insights/data/services/article_service.dart';
 import 'package:safe_bloom/features/insights/domain/entities/article.dart';
+import 'package:safe_bloom/features/tracking/data/repositories/tracking_repository.dart';
+import 'package:safe_bloom/features/tracking/domain/services/cycle_calculator.dart';
 
 import '../widgets/cycle_charts_widget.dart';
 
@@ -17,10 +19,14 @@ class InsightsView extends StatefulWidget {
 }
 
 class InsightsViewState extends State<InsightsView> {
+  final GlobalKey<CycleChartsWidgetState> _defaultChartsKey = GlobalKey<CycleChartsWidgetState>();
+  GlobalKey<CycleChartsWidgetState> get _effectiveChartsKey => widget.chartsKey ?? _defaultChartsKey;
+
   String _selectedCategory = 'All';
   bool _isLoadingArticles = true;
   List<Article> _articles = <Article>[];
   Map<String, int> _readArticleVersions = <String, int>{};
+  String _currentPhase = 'follicular';
 
   @override
   void initState() {
@@ -29,7 +35,7 @@ class InsightsViewState extends State<InsightsView> {
   }
 
   void refresh() {
-    widget.chartsKey?.currentState?.refresh();
+    _effectiveChartsKey.currentState?.refresh();
     _loadArticles();
   }
 
@@ -40,19 +46,54 @@ class InsightsViewState extends State<InsightsView> {
   bool _isUnreadOrUpdated(Article a) =>
       _isArticleNew(a) || _isArticleUpdated(a);
 
+  bool _isExactPhaseMatch(Article a) {
+    if (_currentPhase.isEmpty) return false;
+    final p = a.phase.trim().toLowerCase();
+    final c = _currentPhase.trim().toLowerCase();
+    if (p == 'all' || p == 'all phases' || p == 'all phase') return false;
+    return p == c || p == '$c phase' || c.contains(p) || p.contains(c);
+  }
+
+  int _getArticleRankScore(Article a) {
+    final p = a.phase.trim().toLowerCase();
+    final isExactMatch = _isExactPhaseMatch(a);
+    final isGeneric = p == 'all' || p == 'all phases' || p == 'all phase';
+    final isUnread = _isUnreadOrUpdated(a);
+
+    if (isExactMatch) {
+      return isUnread ? 1 : 2; // Priority 1: Exact Phase Match (e.g. Follicular)
+    } else if (isGeneric) {
+      return isUnread ? 3 : 4; // Priority 2: Universal / All Phases
+    } else {
+      return isUnread ? 5 : 6; // Priority 3: Other Phases
+    }
+  }
+
   Future<void> _loadArticles({bool forceRefresh = false}) async {
     setState(() => _isLoadingArticles = true);
     try {
+      final repo = TrackingRepository.instance;
+      final profile = await repo.getUserProfile();
+      final cycleDay = CycleCalculator.getCurrentCycleDay(profile.lastPeriodStart);
+      final phaseEnum = CycleCalculator.getCyclePhase(
+        cycleDay,
+        avgCycleLength: profile.avgCycleLength,
+        avgPeriodLength: profile.avgPeriodLength,
+      );
+      final currentPhase = phaseEnum.name;
+
       final List<Article> fetched =
           await ArticleService.instance.getArticles(forceRefresh: forceRefresh);
       final Map<String, int> readVersions =
           await ArticleService.instance.getReadArticleVersions();
+
       if (mounted) {
         final unreadCount =
-            fetched.where((a) => !_readArticleVersions.containsKey(a.id) || _readArticleVersions[a.id]! < a.version).length;
+            fetched.where((a) => !readVersions.containsKey(a.id) || readVersions[a.id]! < a.version).length;
         setState(() {
           _articles = List<Article>.from(fetched);
           _readArticleVersions = readVersions;
+          _currentPhase = currentPhase;
           _isLoadingArticles = false;
           _selectedCategory = unreadCount > 0 ? 'NEW' : 'All';
         });
@@ -68,18 +109,19 @@ class InsightsViewState extends State<InsightsView> {
       }
     } catch (e) {
       if (mounted) {
+        final fallback = await ArticleService.instance.loadBundledArticles();
         final Map<String, int> readVersions =
             await ArticleService.instance.getReadArticleVersions();
-        final unreadCount = ArticleService.fallbackArticles
+        final unreadCount = fallback
             .where((a) => !readVersions.containsKey(a.id) || readVersions[a.id]! < a.version)
             .length;
         setState(() {
-          _articles = List<Article>.from(ArticleService.fallbackArticles);
+          _articles = fallback;
           _readArticleVersions = readVersions;
           _isLoadingArticles = false;
           _selectedCategory = unreadCount > 0 ? 'NEW' : 'All';
         });
-        if (forceRefresh) {
+        if (mounted && forceRefresh) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('No internet connection. Displaying offline articles.'),
@@ -98,7 +140,6 @@ class InsightsViewState extends State<InsightsView> {
       if (mounted) {
         setState(() {
           _readArticleVersions[article.id] = article.version;
-          // If we were on the NEW tab and no unread articles remain, switch back to 'All'
           final unreadRemaining =
               _articles.where((a) => _isUnreadOrUpdated(a)).length;
           if (_selectedCategory == 'NEW' && unreadRemaining == 0) {
@@ -110,7 +151,6 @@ class InsightsViewState extends State<InsightsView> {
   }
 
   void _showArticleDetails(Article article) {
-    // Mark as read at current version as soon as user opens article
     _markAsRead(article);
 
     showModalBottomSheet(
@@ -242,13 +282,17 @@ class InsightsViewState extends State<InsightsView> {
           _articles.where((a) => a.category == _selectedCategory).toList();
     }
 
-    // 5. Always sort so unread/updated articles appear FIRST at the top of the section
+    // 5. Strict 6-Tier Ranking Sort:
+    //    1. Exact Phase Match + Unread
+    //    2. Exact Phase Match + Read
+    //    3. Universal ('All') + Unread
+    //    4. Universal ('All') + Read
+    //    5. Other Phase + Unread
+    //    6. Other Phase + Read
     filteredArticles.sort((a, b) {
-      final aIsUnread = _isUnreadOrUpdated(a);
-      final bIsUnread = _isUnreadOrUpdated(b);
-      if (aIsUnread && !bIsUnread) return -1;
-      if (!aIsUnread && bIsUnread) return 1;
-      return 0;
+      final scoreA = _getArticleRankScore(a);
+      final scoreB = _getArticleRankScore(b);
+      return scoreA.compareTo(scoreB);
     });
 
     return SingleChildScrollView(
@@ -265,7 +309,7 @@ class InsightsViewState extends State<InsightsView> {
           const SizedBox(height: AppSpacing.md),
 
           // Interactive Cycle & Symptom Charts Card
-          CycleChartsWidget(key: widget.chartsKey),
+          CycleChartsWidget(key: _effectiveChartsKey),
 
           const SizedBox(height: AppSpacing.lg),
           Row(

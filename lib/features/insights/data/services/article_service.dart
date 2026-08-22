@@ -1,83 +1,40 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:safe_bloom/core/services/local_notification_service.dart';
+import 'package:safe_bloom/core/services/secure_storage_service.dart';
 import '../../domain/entities/article.dart';
 
 class ArticleService {
   static final ArticleService instance = ArticleService._init();
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  final FlutterSecureStorage _secureStorage = SafeBloomSecureStorage.instance;
 
   static const String _cacheKey = 'cached_insights_articles';
   static const String _lastFetchKey = 'last_articles_fetch_timestamp';
-  
+  static const String _readArticleVersionsKey = 'read_article_versions_json';
+  static const String _knownArticleIdsKey = 'known_article_ids_json';
+
   /// Public or Secret Raw Gist / JSON feed URL for dynamic daily articles.
   static String feedUrl =
       'https://gist.githubusercontent.com/DarkWolfHunter007/7e69dbfcc1f5e5ef06662d0e7eeed7a4/raw/articles_feed.json';
 
   ArticleService._init();
 
-  /// Default curated built-in articles (fallback offline library)
-  static final List<Article> fallbackArticles = <Article>[
-    Article(
-      id: 'art_ovulation_fitness',
-      title: 'Optimizing High-Intensity Workouts in Ovulation',
-      category: 'Fitness',
-      readTime: '3 min read',
-      phase: 'Ovulation',
-      content:
-          'During your ovulation window, estrogen peaks along with testosterone. This creates ideal conditions for strength gains, HIIT, and personal records! Leverage high energy levels while focusing on proper joint stability.',
-      sourceUrl: 'https://www.healthline.com/health/fitness-exercise/cycle-syncing-workout',
-    ),
-    Article(
-      id: 'art_follicular_nutrition',
-      title: 'Hormone Balancing Diet & Antioxidants',
-      category: 'Nutrition',
-      readTime: '4 min read',
-      phase: 'Follicular',
-      content:
-          'Support follicle development with healthy fats, avocado, salmon, and vibrant berries. As your body prepares for ovulation, keep hydration high and include fermented foods like kimchi or kefir for gut health.',
-      sourceUrl: 'https://www.medicalnewstoday.com/articles/cycle-syncing-food',
-    ),
-    Article(
-      id: 'art_luteal_sleep',
-      title: 'Managing PMS & Luteal Phase Sleep Quality',
-      category: 'Mind & Sleep',
-      readTime: '5 min read',
-      phase: 'Luteal',
-      content:
-          'Progesterone rises during the luteal phase, slightly elevating core body temperature. Sleep in a cooler room (65–68°F) to optimize deep REM sleep and reduce pre-menstrual restlessness.',
-      sourceUrl: 'https://www.sleepfoundation.org/women-sleep/pms-and-sleep',
-    ),
-    Article(
-      id: 'art_menstrual_iron',
-      title: 'Iron Replenishment During Your Period',
-      category: 'Nutrition',
-      readTime: '2 min read',
-      phase: 'Menstrual',
-      content:
-          'Prioritize iron-rich foods combined with Vitamin C (like spinach with lemon juice or lentils with bell peppers) to support energy levels and compensate for menstrual blood loss.',
-      sourceUrl: 'https://www.hopkinsmedicine.org/health/wellness-and-prevention/anemia-and-menstruation',
-    ),
-    Article(
-      id: 'art_follicular_creativity',
-      title: 'Harnessing High Energy & Brain Focus in Follicular Phase',
-      category: 'Mind & Sleep',
-      readTime: '3 min read',
-      phase: 'Follicular',
-      content:
-          'Rising estrogen levels during the follicular phase boost brain neuroplasticity and dopamine. Use this phase for planning new projects, brainstorming sessions, and social gatherings.',
-    ),
-    Article(
-      id: 'art_luteal_magnesium',
-      title: 'Magnesium & Cramp Relief in Luteal Phase',
-      category: 'Nutrition',
-      readTime: '4 min read',
-      phase: 'Luteal',
-      content:
-          'Magnesium glycinate or citrate helps relax uterine smooth muscle, relieving pre-period cramps and reducing fluid retention. Include dark chocolate, pumpkin seeds, and leafy greens.',
-    ),
-  ];
+  /// Loads the curated offline library directly from the bundled asset.
+  Future<List<Article>> loadBundledArticles() async {
+    try {
+      final jsonString = await rootBundle.loadString('assets/articles_feed.json');
+      final List<dynamic> jsonList = jsonDecode(jsonString);
+      return List<Article>.from(
+        jsonList.map((item) => Article.fromMap(Map<String, dynamic>.from(item))),
+      );
+    } catch (e) {
+      debugPrint('Error loading bundled articles: $e');
+      return [];
+    }
+  }
 
   /// Checks whether local cache is older than 24 hours
   Future<bool> isCacheStale() async {
@@ -92,7 +49,7 @@ class ArticleService {
     }
   }
 
-  /// Fetches articles from Gist/Remote JSON feed with 24-hour auto-refresh & local cache fallback.
+  /// Fetches articles from Gist/Remote JSON feed with 24-hour auto-refresh & local cache/asset fallback.
   Future<List<Article>> getArticles({
     String? customFeedUrl,
     bool forceRefresh = false,
@@ -103,7 +60,6 @@ class ArticleService {
     // 1. Try remote fetch if forced OR if 24 hours have passed since last update
     if (forceRefresh || stale) {
       try {
-        // Cache-busting query param to bypass GitHub CDN caching on force refresh
         final cacheBustUrl = forceRefresh
             ? '$targetUrl?t=${DateTime.now().millisecondsSinceEpoch}'
             : targetUrl;
@@ -121,7 +77,9 @@ class ArticleService {
           );
 
           if (articles.isNotEmpty) {
-            // Cache successful network payload & timestamp
+            // Check for new articles and trigger notification
+            await _detectAndNotifyNewArticles(articles);
+
             await _secureStorage.write(
               key: _cacheKey,
               value: jsonEncode(articles.map((a) => a.toMap()).toList()),
@@ -157,12 +115,53 @@ class ArticleService {
       debugPrint('Error reading cached articles: $e');
     }
 
-    // 3. Fallback to built-in curated library
-    return List<Article>.from(fallbackArticles);
+    // 3. Fallback to bundled asset library
+    final bundled = await loadBundledArticles();
+    if (bundled.isNotEmpty) {
+      // Seed known IDs if not already present
+      try {
+        final known = await _secureStorage.read(key: _knownArticleIdsKey);
+        if (known == null) {
+          await _secureStorage.write(
+            key: _knownArticleIdsKey,
+            value: jsonEncode(bundled.map((a) => a.id).toList()),
+          );
+        }
+      } catch (_) {}
+    }
+    return bundled;
   }
 
-  static const String _readArticlesKey = 'read_article_ids_json';
-  static const String _readArticleVersionsKey = 'read_article_versions_json';
+  /// Compares incoming articles against known IDs and triggers notification if new guides are found.
+  Future<void> _detectAndNotifyNewArticles(List<Article> incoming) async {
+    try {
+      final knownJson = await _secureStorage.read(key: _knownArticleIdsKey);
+      if (knownJson != null && knownJson.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(knownJson);
+        final Set<String> knownIds = list.map((e) => e.toString()).toSet();
+
+        final newArticles = incoming.where((a) => !knownIds.contains(a.id)).toList();
+        if (newArticles.isNotEmpty) {
+          final titles = newArticles.map((a) => a.title).toList();
+          await LocalNotificationService.instance.notifyNewArticles(titles);
+        }
+
+        final updatedSet = knownIds.union(incoming.map((a) => a.id).toSet());
+        await _secureStorage.write(
+          key: _knownArticleIdsKey,
+          value: jsonEncode(updatedSet.toList()),
+        );
+      } else {
+        // First run — seed all current IDs without spamming notifications
+        await _secureStorage.write(
+          key: _knownArticleIdsKey,
+          value: jsonEncode(incoming.map((a) => a.id).toList()),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error detecting new articles for notification: $e');
+    }
+  }
 
   /// Returns map of article ID to the version number the user has read
   Future<Map<String, int>> getReadArticleVersions() async {
@@ -175,26 +174,6 @@ class ArticleService {
     } catch (e) {
       debugPrint('Error reading read article versions: $e');
     }
-    // Fallback migration from legacy _readArticlesKey set if present
-    try {
-      final legacySet = await getReadArticleIds();
-      return {for (var id in legacySet) id: 1};
-    } catch (_) {
-      return {};
-    }
-  }
-
-  /// Returns set of article IDs that user has read (legacy compatibility)
-  Future<Set<String>> getReadArticleIds() async {
-    try {
-      final jsonStr = await _secureStorage.read(key: _readArticlesKey);
-      if (jsonStr != null && jsonStr.isNotEmpty) {
-        final List<dynamic> list = jsonDecode(jsonStr);
-        return list.map((e) => e.toString()).toSet();
-      }
-    } catch (e) {
-      debugPrint('Error reading read article IDs: $e');
-    }
     return {};
   }
 
@@ -206,13 +185,6 @@ class ArticleService {
       await _secureStorage.write(
         key: _readArticleVersionsKey,
         value: jsonEncode(current),
-      );
-      // Also update legacy key for compatibility
-      final legacySet = await getReadArticleIds();
-      legacySet.add(articleId);
-      await _secureStorage.write(
-        key: _readArticlesKey,
-        value: jsonEncode(legacySet.toList()),
       );
     } catch (e) {
       debugPrint('Error marking article read: $e');

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../insights/presentation/views/insights_view.dart';
-import '../../../insights/presentation/widgets/cycle_charts_widget.dart';
 import '../../../settings/presentation/views/settings_view.dart';
 import 'calendar_view.dart';
 import 'today_view.dart';
@@ -18,22 +17,29 @@ class _HomeShellViewState extends State<HomeShellView> {
   int _currentIndex = 0;
   final GlobalKey<TodayViewState> _todayKey = GlobalKey<TodayViewState>();
   final GlobalKey<CalendarViewState> _calendarKey = GlobalKey<CalendarViewState>();
-  final GlobalKey<CycleChartsWidgetState> _chartsKey = GlobalKey<CycleChartsWidgetState>();
   final GlobalKey<InsightsViewState> _insightsKey = GlobalKey<InsightsViewState>();
   final GlobalKey<SettingsViewState> _settingsKey = GlobalKey<SettingsViewState>();
 
-  void _onTabTapped(int index) {
-    setState(() => _currentIndex = index);
+  late final List<Widget> _views;
 
-    if (index == 0) {
-      _todayKey.currentState?.refresh();
-    } else if (index == 1) {
-      _calendarKey.currentState?.refresh();
-    } else if (index == 2) {
-      _insightsKey.currentState?.refresh();
-    } else if (index == 3) {
-      _settingsKey.currentState?.refresh();
-    }
+  @override
+  void initState() {
+    super.initState();
+    _views = [
+      TodayView(key: _todayKey),
+      CalendarView(key: _calendarKey),
+      InsightsView(key: _insightsKey),
+      SettingsView(key: _settingsKey),
+    ];
+  }
+
+  void _onTabTapped(int index) {
+    if (_currentIndex == index) return;
+    setState(() => _currentIndex = index);
+    if (index == 0) _todayKey.currentState?.refresh();
+    if (index == 1) _calendarKey.currentState?.refresh();
+    if (index == 2) _insightsKey.currentState?.refresh();
+    if (index == 3) _settingsKey.currentState?.refresh();
   }
 
   @override
@@ -43,12 +49,7 @@ class _HomeShellViewState extends State<HomeShellView> {
       body: SafeArea(
         child: IndexedStack(
           index: _currentIndex,
-          children: [
-            TodayView(key: _todayKey),
-            CalendarView(key: _calendarKey),
-            InsightsView(key: _insightsKey, chartsKey: _chartsKey),
-            SettingsView(key: _settingsKey),
-          ],
+          children: _views,
         ),
       ),
       bottomNavigationBar: BottomNavigationBar(

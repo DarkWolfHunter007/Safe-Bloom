@@ -47,7 +47,7 @@ class CycleChartsWidget extends StatefulWidget {
 }
 
 class CycleChartsWidgetState extends State<CycleChartsWidget> {
-  final TrackingRepository _repository = TrackingRepository();
+  final TrackingRepository _repository = TrackingRepository.instance;
   bool _isLoading = true;
   int _selectedTab = 0; // 0: Cycle Trends, 1: Symptom Frequency
 
@@ -90,23 +90,29 @@ class CycleChartsWidgetState extends State<CycleChartsWidget> {
     final now = DateTime.now();
     final List<CycleTrendPoint> points = [];
 
-    // Calculate dynamic averages from real period entries
-    final averages = CycleCalculator.calculateAveragesFromEntries(entries);
+    // Calculate dynamic averages (groupIntoCycles inside filters pure-spotting groups automatically)
+    final averages = CycleCalculator.calculateAveragesFromEntries(
+      entries,
+      fallbackCycleLength: profile.avgCycleLength,
+      fallbackPeriodLength: profile.avgPeriodLength,
+    );
     final userAvg = averages['avgCycleLength']?.toDouble() ?? profile.avgCycleLength.toDouble();
     _avgCycleLength = userAvg;
 
-    // Group consecutive entries into distinct period cycles
+    // Group consecutive entries into distinct period cycles (genuine cycles for cycle-to-cycle lengths)
     final cycles = CycleGroupUtils.groupIntoCycles(entries);
 
-    _hasRealCycleData = entries.isNotEmpty;
+    _hasRealCycleData = entries.any((e) => e.isActiveFlow);
 
     // Extract real cycle lengths if we have at least 2 distinct cycles
     final Map<String, double> realCycleByMonth = {};
     if (cycles.length >= 2) {
       for (int i = 0; i < cycles.length - 1; i++) {
-        final start1 = cycles[i].first.timestamp;
-        final start2 = cycles[i + 1].first.timestamp;
-        final length = start2.difference(start1).inDays.toDouble();
+        final start1 = CycleGroupUtils.getCycleStartDate(cycles[i]);
+        final start2 = CycleGroupUtils.getCycleStartDate(cycles[i + 1]);
+        final d1 = DateTime(start1.year, start1.month, start1.day);
+        final d2 = DateTime(start2.year, start2.month, start2.day);
+        final length = d2.difference(d1).inDays.toDouble();
         final monthKey = DateFormat('yyyy-MM').format(start2);
         realCycleByMonth[monthKey] = length.clamp(18.0, 45.0);
       }
@@ -203,6 +209,10 @@ class CycleChartsWidgetState extends State<CycleChartsWidget> {
         return AppColors.phaseOvulation;
       case SymptomCategory.exercise:
         return AppColors.dropCoral;
+      case SymptomCategory.cervicalFluid:
+        return AppColors.phaseOvulation;
+      case SymptomCategory.biomarker:
+        return const Color(0xFFD4AF37);
       case SymptomCategory.custom:
         return AppColors.textMuted;
     }
@@ -253,40 +263,39 @@ class CycleChartsWidgetState extends State<CycleChartsWidget> {
         children: [
           // Header Row with Title & Refresh button
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.dropCoral.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.dropCoral.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.auto_graph_rounded,
+                  color: AppColors.dropCoral,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Cycle Trends & Symptoms',
+                      style: AppTypography.brandTitle(fontSize: 18),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    child: const Icon(
-                      Icons.auto_graph_rounded,
-                      color: AppColors.dropCoral,
-                      size: 20,
+                    Text(
+                      '6-MONTH VARIATION & RECURRING PATTERNS',
+                      style: AppTypography.brandTagline(
+                        color: AppColors.petalRose,
+                        fontSize: 9,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Cycle Trends & Symptoms',
-                        style: AppTypography.brandTitle(fontSize: 20),
-                      ),
-                      Text(
-                        '6-MONTH VARIATION & RECURRING PATTERNS',
-                        style: AppTypography.brandTagline(
-                          color: AppColors.petalRose,
-                          fontSize: 9,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
               IconButton(
                 icon: const Icon(Icons.refresh_rounded, size: 20, color: AppColors.textMuted),
@@ -402,24 +411,30 @@ class CycleChartsWidgetState extends State<CycleChartsWidget> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Icon(
-                    _selectedTab == 0
-                        ? (_hasRealCycleData ? Icons.check_circle_outline : Icons.info_outline)
-                        : (_hasRealSymptomData ? Icons.check_circle_outline : Icons.info_outline),
-                    size: 13,
-                    color: AppColors.textMuted,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _selectedTab == 0
-                        ? (_hasRealCycleData ? 'Real cycle tracking history' : 'Baseline profile estimate')
-                        : (_hasRealSymptomData ? 'Based on your logged symptoms' : 'Sample symptom distribution'),
-                    style: AppTypography.body(fontSize: 11, color: AppColors.textMuted),
-                  ),
-                ],
+              Expanded(
+                child: Row(
+                  children: [
+                    Icon(
+                      _selectedTab == 0
+                          ? (_hasRealCycleData ? Icons.check_circle_outline : Icons.info_outline)
+                          : (_hasRealSymptomData ? Icons.check_circle_outline : Icons.info_outline),
+                      size: 13,
+                      color: AppColors.textMuted,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        _selectedTab == 0
+                            ? (_hasRealCycleData ? 'Real cycle tracking history' : 'Baseline profile estimate')
+                            : (_hasRealSymptomData ? 'Based on your logged symptoms' : 'Sample symptom distribution'),
+                        style: AppTypography.body(fontSize: 11, color: AppColors.textMuted),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: AppSpacing.xs),
               Text(
                 'Safe Bloom Privacy Protected',
                 style: AppTypography.brandTagline(color: AppColors.petalRose.withValues(alpha: 0.6), fontSize: 8),
