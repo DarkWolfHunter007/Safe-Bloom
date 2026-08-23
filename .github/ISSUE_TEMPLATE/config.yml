@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "💬 Safe Bloom Discussions & Questions"
+    url: "https://github.com/DarkWolfHunter007/Safe-Bloom/discussions"
+    about: "Ask general questions, discuss cycle tracking tips, or share community feedback."
+  - name: "📖 Architecture & Security Model"
+    url: "https://github.com/DarkWolfHunter007/Safe-Bloom#architecture--technology-stack"
+    about: "Read about Safe Bloom's 100% offline, zero-knowledge cryptographic model."

@@ -1,0 +1,62 @@
+name: "🔒 Security & Privacy Report"
+description: "Report a potential security vulnerability, cryptographic issue, or privacy leak in Safe Bloom"
+title: "[SECURITY]: "
+labels: ["security", "privacy", "critical"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Responsible Security & Privacy Disclosure 🛡️
+        Safe Bloom takes user privacy and cryptographic integrity very seriously.
+        
+        If you have discovered a critical security vulnerability (such as a flaw in SQLCipher key handling, AES-256 vault encryption, or biometric bypass), please report it here or privately via GitHub Security Advisories if available.
+
+  - type: dropdown
+    id: security-area
+    attributes:
+      label: Security Domain
+      description: Which security boundary is involved?
+      options:
+        - "Database Encryption (SQLCipher / AES-256)"
+        - "Backup Vault Cryptography (AES-256-CTR / PBKDF2 / HMAC)"
+        - "Biometric Lock & App Lifecycle Security"
+        - "Screen Security (FLAG_SECURE / Screenshot Prevention)"
+        - "Local Storage Key Isolation (Android Keystore / iOS Keychain)"
+        - "Other Data Leak / Security Concern"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Affected App Version / Commit
+      placeholder: "v1.0.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: vulnerability-details
+    attributes:
+      label: Vulnerability Details
+      description: Provide a technical explanation of the issue without exposing private personal keys or sensitive data.
+      placeholder: "Explain the vulnerability or privacy defect..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: poc
+    attributes:
+      label: Proof of Concept / Reproduction Steps
+      description: Steps or scripts to reproduce the security finding.
+      placeholder: "Steps to reproduce..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested-fix
+    attributes:
+      label: Suggested Remediation
+      description: If you have ideas on how to fix or mitigate this vulnerability, please describe them here.
+      placeholder: "Recommended fix or patch..."
+    validations:
+      required: false

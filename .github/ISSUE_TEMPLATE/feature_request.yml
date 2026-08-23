@@ -1,0 +1,73 @@
+name: "✨ Feature Request"
+description: "Suggest an idea, cycle calculation improvement, or privacy feature for Safe Bloom"
+title: "[FEATURE]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Propose a Feature or Improvement 🌸
+        Safe Bloom is dedicated to privacy-first, zero-knowledge, offline health tracking. All feature proposals must align with maintaining complete on-device privacy (no third-party tracking, no server dependency, zero analytics).
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Feature Category
+      description: Which area does this feature proposal enhance?
+      options:
+        - "Privacy & Security (Encryption, Biometrics, Vaults)"
+        - "Cycle Predictions & Period Algorithms"
+        - "Health, Symptoms, & Hydration Logging"
+        - "Pregnancy & Fertility Tracking"
+        - "Data Export & Reports (PDF, Encrypted Backup)"
+        - "Insights, Articles, & Educational Guides"
+        - "UI / UX, Theming & Accessibility"
+        - "Platform Support (Android, iOS, Desktop)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Is your feature request related to a problem or limitation?
+      description: A clear and concise description of what the problem is or what use case is currently missing.
+      placeholder: "I find it challenging to track..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution / User Experience
+      description: Describe the feature, how it should work, and how users would interact with it.
+      placeholder: "Add an option to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: privacy-considerations
+    attributes:
+      label: Privacy & Offline Architecture Considerations
+      description: How does this proposed feature preserve Safe Bloom's 100% offline, zero-knowledge architecture?
+      placeholder: "This feature computes everything locally on device using SQLCipher/local storage..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions, designs, or workflows you have considered.
+      placeholder: "An alternative approach could be..."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: "I have searched existing feature requests to make sure this is not a duplicate."
+          required: true
+        - label: "This proposal adheres to Safe Bloom's zero-knowledge and offline-first core principles."
+          required: true
