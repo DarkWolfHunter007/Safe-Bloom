@@ -7,7 +7,7 @@
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
 [![Dart](https://img.shields.io/badge/Dart-3.x-0175C2?style=for-the-badge&logo=dart&logoColor=white)](https://dart.dev)
 [![Release](https://img.shields.io/badge/Release-v1.0.0-E05A47?style=for-the-badge)](https://github.com/DarkWolfHunter007/Safe-Bloom/releases/tag/v1.0.0)
-[![Tests](https://img.shields.io/badge/Tests-242%2F242%20Passed%20(100%25)-4E8752?style=for-the-badge)](https://github.com/DarkWolfHunter007/Safe-Bloom)
+[![Tests](https://img.shields.io/badge/Tests-268%2F268%20Passed%20(100%25)-4E8752?style=for-the-badge)](https://github.com/DarkWolfHunter007/Safe-Bloom)
 [![Encryption](https://img.shields.io/badge/Database-SQLCipher%20AES--256-5B2C6F?style=for-the-badge)](https://www.zetetic.net/sqlcipher/)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
@@ -72,10 +72,11 @@ Most period tracking apps treat intimate reproductive health data as a commercia
 * **Doctor Consultation Ready:** Generates professional, offline PDF summaries of cycle variance, flow statistics, spotting patterns, and logged symptoms.
 * **Offline Rendering:** Built entirely on-device with zero cloud rendering or external network dependencies.
 
-### 🗄️ 6. End-to-End Encrypted Vault Backup & Restore
-* **Passphrase-Protected Encrypted Vaults:** Exports a zero-knowledge JSON vault encrypted using PBKDF2-HMAC-SHA256 and AES-GCM.
+### 🗄️ 6. End-to-End Encrypted Vault File (.safebloom) Backup & Restore
+* **Single-File Encrypted Vault (`.safebloom`):** Encrypted using PBKDF2-HMAC-SHA256 (20,000 iterations) + AES-256-CTR with HMAC-SHA256 authentication.
+* **Zero Clipboard Vulnerabilities:** Direct native OS share sheet (`share_plus`) and system file picker (`file_picker`) workflows.
+* **Atomic Database Replacement:** Full SQLCipher ACID transactions prevent data destruction if import fails validation.
 * **Air-Gapped Portability:** Move backups via offline storage, USB, or local file sharing.
-* **Welcome Flow Restoration:** Single-tap backup vault import directly from the onboarding screen.
 
 ### 🛡️ 7. Biometric Security & Screen Privacy
 * **Biometric App Lock:** Fingerprint, Face Unlock, and Touch ID authentication on app launch, app switching, and background resumption.

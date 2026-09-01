@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
+import '../../../../core/services/vault_file_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -40,11 +43,45 @@ class _DatabaseRecoveryViewState extends State<DatabaseRecoveryView> {
   }
 
   Future<void> _handleRestoreEncryptedVault() async {
-    _vaultController.clear();
+    final messenger = ScaffoldMessenger.of(context);
+    File? pickedFile;
+    try {
+      pickedFile = await VaultFileService.pickVaultFile();
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Failed to open file picker: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (pickedFile == null || !mounted) return;
+
+    try {
+      await VaultFileService.readVaultFile(pickedFile);
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Invalid vault file: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    final fileName = p.basename(pickedFile.path);
     _vaultPasswordController.clear();
     bool obscure = true;
 
-    final result = await showDialog<Map<String, String>>(
+    if (!mounted) return;
+
+    final pass = await showDialog<String>(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -54,10 +91,10 @@ class _DatabaseRecoveryViewState extends State<DatabaseRecoveryView> {
           ),
           title: Row(
             children: [
-              const Icon(Icons.shield_rounded, color: AppColors.dropCoral, size: 22),
+              const Icon(Icons.lock_open_rounded, color: AppColors.dropCoral, size: 22),
               const SizedBox(width: 8),
               Text(
-                'Restore Encrypted Vault',
+                'Unlock Vault File',
                 style: AppTypography.brandTitle(fontSize: 18),
               ),
             ],
@@ -67,40 +104,33 @@ class _DatabaseRecoveryViewState extends State<DatabaseRecoveryView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'Paste your encrypted backup vault and enter the password. If valid, your database will be safely reconstructed with the backup data.',
-                  style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: AppColors.lightBackground,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                    border: Border.all(color: AppColors.lightCardBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.description_outlined, size: 18, color: AppColors.dropCoral),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          fileName,
+                          style: AppTypography.body(fontSize: 12, fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                TextField(
-                  controller: _vaultController,
-                  maxLines: 4,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
-                  decoration: InputDecoration(
-                    hintText: 'Paste {"safe_bloom_backup_version": 1, ...}',
-                    filled: true,
-                    fillColor: AppColors.lightBackground,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                      borderSide: const BorderSide(color: AppColors.lightCardBorder),
-                    ),
-                  ),
+                Text(
+                  'Enter the password to decrypt and restore your encrypted database:',
+                  style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () async {
-                      final data = await Clipboard.getData(Clipboard.kTextPlain);
-                      if (data != null && data.text != null) {
-                        _vaultController.text = data.text!;
-                      }
-                    },
-                    icon: const Icon(Icons.paste, size: 14, color: AppColors.dropCoral),
-                    label: Text('PASTE VAULT', style: AppTypography.brandTagline(color: AppColors.dropCoral, fontSize: 10)),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
+                const SizedBox(height: AppSpacing.md),
                 TextField(
                   controller: _vaultPasswordController,
                   obscureText: obscure,
@@ -129,18 +159,17 @@ class _DatabaseRecoveryViewState extends State<DatabaseRecoveryView> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.dropCoral),
               onPressed: () {
-                final vault = _vaultController.text.trim();
-                final pass = _vaultPasswordController.text.trim();
-                if (vault.isEmpty || pass.isEmpty) {
+                final password = _vaultPasswordController.text.trim();
+                if (password.isEmpty) {
                   ScaffoldMessenger.of(dialogCtx).showSnackBar(
                     const SnackBar(
-                      content: Text('Please provide both the vault text and the password.'),
+                      content: Text('Please enter your vault password.'),
                       backgroundColor: AppColors.petalRose,
                     ),
                   );
                   return;
                 }
-                Navigator.of(dialogCtx).pop({'vault': vault, 'pass': pass});
+                Navigator.of(dialogCtx).pop(password);
               },
               child: Text('RESTORE VAULT', style: AppTypography.brandTagline(color: Colors.white, fontSize: 11)),
             ),
@@ -149,15 +178,14 @@ class _DatabaseRecoveryViewState extends State<DatabaseRecoveryView> {
       ),
     );
 
-    if (result == null || !mounted) return;
+    if (pass == null || pass.isEmpty || !mounted) return;
 
     setState(() => _isProcessing = true);
-    final messenger = ScaffoldMessenger.of(context);
 
     try {
-      final stats = await _repository.recoverAndRestoreFromEncryptedVault(
-        vaultJsonString: result['vault']!,
-        passphrase: result['pass']!,
+      final stats = await _repository.recoverAndRestoreFromEncryptedVaultFile(
+        file: pickedFile,
+        passphrase: pass,
       );
 
       messenger.showSnackBar(

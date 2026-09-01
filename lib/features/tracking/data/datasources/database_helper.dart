@@ -373,13 +373,22 @@ class DatabaseHelper {
 
   /// Atomically imports user profile and entries in a single ACID transaction.
   /// If any entry fails or is invalid, the entire transaction rolls back cleanly.
+  /// When [clearExisting] is true, existing tables are cleared within the transaction
+  /// so that the database is atomically replaced by the imported vault.
   Future<void> executeAtomicImport({
     UserProfile? profile,
     List<PeriodEntry>? periodEntries,
     List<SymptomEntry>? symptomEntries,
+    bool clearExisting = false,
   }) async {
     final db = await instance.database;
     await db.transaction((txn) async {
+      if (clearExisting) {
+        await txn.delete('period_entries');
+        await txn.delete('symptom_entries');
+        await txn.delete('daily_logs');
+      }
+
       if (profile != null) {
         final map = profile.toMap();
         map['id'] = 1;

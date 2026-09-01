@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import '../../features/tracking/domain/entities/period_entry.dart';
+import '../../features/tracking/domain/entities/symptom_entry.dart';
+import '../../features/tracking/domain/entities/user_profile.dart';
 
 class BackupCryptoException implements Exception {
   final String message;
@@ -18,15 +21,36 @@ class MalformedBackupPayloadException extends BackupCryptoException {
   const MalformedBackupPayloadException([super.message = 'Malformed or incompatible backup payload.']);
 }
 
+class UnsupportedVaultVersionException extends MalformedBackupPayloadException {
+  const UnsupportedVaultVersionException([super.message = 'Unsupported vault version or unknown format.']);
+}
+
+/// Structured container holding validated domain entities decoded from an authentic vault.
+class DecryptedVaultPayload {
+  final UserProfile profile;
+  final List<PeriodEntry> periodEntries;
+  final List<SymptomEntry> symptomEntries;
+
+  const DecryptedVaultPayload({
+    required this.profile,
+    required this.periodEntries,
+    required this.symptomEntries,
+  });
+}
+
 /// Standardized cryptographic service for password-protected Safe Bloom backup vaults.
 /// Uses PBKDF2-HMAC-SHA256 key derivation + AES-256-CTR + HMAC-SHA256 (Encrypt-then-MAC).
 class BackupCryptoService {
   static const int kVersion = 1;
+  static const String kFormat = 'SafeBloomVault';
+  static const String kLegacyFormat = 'ENCRYPTED_VAULT_V1';
   static const String kAlgorithm = 'AES-256-CTR-HMAC-SHA256';
+  static const String kKdf = 'PBKDF2-HMAC-SHA256';
   static const int kPbkdf2Iterations = 20000;
   static const int kSaltLength = 16;
   static const int kIvLength = 16;
   static const int kMaxPayloadBytes = 10 * 1024 * 1024; // 10 MB sanity limit
+  static const String kVaultFileExtension = 'safebloom';
 
   /// Encrypts plaintext JSON data with a user-provided passphrase into a protected envelope.
   static String encryptVault({
@@ -73,10 +97,11 @@ class BackupCryptoService {
     final macDigest = hmac.convert(macData.toBytes());
 
     final envelope = {
+      'format': kFormat,
+      'version': kVersion,
       'safe_bloom_backup_version': kVersion,
-      'format': 'ENCRYPTED_VAULT_V1',
       'algorithm': kAlgorithm,
-      'kdf': 'PBKDF2-HMAC-SHA256',
+      'kdf': kKdf,
       'iterations': kPbkdf2Iterations,
       'salt': base64Encode(salt),
       'iv': base64Encode(iv),
@@ -88,13 +113,11 @@ class BackupCryptoService {
     return const JsonEncoder.withIndent('  ').convert(envelope);
   }
 
-  /// Decrypts a protected envelope using the user-provided passphrase after verifying MAC integrity.
-  static String decryptVault({
-    required String vaultJsonString,
-    required String passphrase,
-  }) {
-    if (passphrase.trim().isEmpty) {
-      throw const InvalidBackupPasswordException('Password cannot be empty.');
+  /// Pre-validates the unencrypted container envelope headers and structure.
+  /// Throws [MalformedBackupPayloadException] or [UnsupportedVaultVersionException] on failure.
+  static Map<String, dynamic> validateVaultEnvelope(String vaultJsonString) {
+    if (vaultJsonString.trim().isEmpty) {
+      throw const MalformedBackupPayloadException('Backup file is empty.');
     }
 
     if (vaultJsonString.length > kMaxPayloadBytes) {
@@ -112,34 +135,69 @@ class BackupCryptoService {
       throw const MalformedBackupPayloadException('Backup payload must be a JSON object.');
     }
 
-    final version = decoded['safe_bloom_backup_version'];
+    final rawVersion = decoded['version'] ?? decoded['safe_bloom_backup_version'];
     final format = decoded['format'];
     final saltStr = decoded['salt'];
     final ivStr = decoded['iv'];
     final ciphertextStr = decoded['ciphertext'];
     final macStr = decoded['mac'];
-    final iterations = decoded['iterations'] is int ? decoded['iterations'] as int : kPbkdf2Iterations;
 
-    if (version == null || format != 'ENCRYPTED_VAULT_V1' || saltStr is! String || ivStr is! String || ciphertextStr is! String || macStr is! String) {
-      throw const MalformedBackupPayloadException('Missing or invalid encrypted vault envelope headers.');
+    if (format == null || (format != kFormat && format != kLegacyFormat)) {
+      throw MalformedBackupPayloadException('Unsupported or unknown vault format: $format');
     }
 
-    Uint8List salt;
-    Uint8List iv;
-    Uint8List ciphertext;
-    Uint8List expectedMac;
+    if (rawVersion == null || rawVersion is! int || rawVersion != kVersion) {
+      throw UnsupportedVaultVersionException('Unsupported vault version: $rawVersion. Current supported version is $kVersion.');
+    }
+
+    if (saltStr is! String || ivStr is! String || ciphertextStr is! String || macStr is! String) {
+      throw const MalformedBackupPayloadException('Missing or invalid encrypted vault envelope parameters.');
+    }
+
+    if (saltStr.isEmpty || ivStr.isEmpty || ciphertextStr.isEmpty || macStr.isEmpty) {
+      throw const MalformedBackupPayloadException('Empty cryptographic parameters in vault envelope.');
+    }
+
     try {
-      salt = base64Decode(saltStr);
-      iv = base64Decode(ivStr);
-      ciphertext = base64Decode(ciphertextStr);
-      expectedMac = base64Decode(macStr);
-    } catch (_) {
+      final salt = base64Decode(saltStr);
+      final iv = base64Decode(ivStr);
+      final mac = base64Decode(macStr);
+      base64Decode(ciphertextStr);
+
+      if (salt.length != kSaltLength || iv.length != kIvLength || mac.length != 32) {
+        throw const MalformedBackupPayloadException('Invalid cryptographic parameter lengths.');
+      }
+    } catch (e) {
+      if (e is MalformedBackupPayloadException) rethrow;
       throw const MalformedBackupPayloadException('Corrupted base64 encoding in vault payload.');
     }
 
-    if (salt.length != kSaltLength || iv.length != kIvLength) {
-      throw const MalformedBackupPayloadException('Invalid cryptographic parameter lengths.');
+    return decoded;
+  }
+
+  /// Decrypts a protected envelope using the user-provided passphrase after verifying MAC integrity.
+  static String decryptVault({
+    required String vaultJsonString,
+    required String passphrase,
+  }) {
+    if (passphrase.trim().isEmpty) {
+      throw const InvalidBackupPasswordException('Password cannot be empty.');
     }
+
+    final decoded = validateVaultEnvelope(vaultJsonString);
+
+    final rawVersion = decoded['version'] ?? decoded['safe_bloom_backup_version'];
+    final int version = (rawVersion is int) ? rawVersion : kVersion;
+    final saltStr = decoded['salt'] as String;
+    final ivStr = decoded['iv'] as String;
+    final ciphertextStr = decoded['ciphertext'] as String;
+    final macStr = decoded['mac'] as String;
+    final iterations = decoded['iterations'] is int ? decoded['iterations'] as int : kPbkdf2Iterations;
+
+    final Uint8List salt = base64Decode(saltStr);
+    final Uint8List iv = base64Decode(ivStr);
+    final Uint8List ciphertext = base64Decode(ciphertextStr);
+    final Uint8List expectedMac = base64Decode(macStr);
 
     // Derive keys
     final derivedKeys = _pbkdf2(
@@ -152,9 +210,9 @@ class BackupCryptoService {
     final encKey = Uint8List.sublistView(derivedKeys, 0, 32);
     final authKey = Uint8List.sublistView(derivedKeys, 32, 64);
 
-    // Verify HMAC
+    // Verify HMAC-SHA256 before any decryption occurs
     final macData = BytesBuilder(copy: false)
-      ..addByte(version is int ? version : kVersion)
+      ..addByte(version)
       ..add(salt)
       ..add(iv)
       ..add(ciphertext);
@@ -173,6 +231,153 @@ class BackupCryptoService {
     } catch (_) {
       throw const MalformedBackupPayloadException('Decrypted payload is not valid UTF-8 text.');
     }
+  }
+
+  /// Deeply validates the decrypted JSON schema and instantiates strongly typed domain models.
+  /// Throws [MalformedBackupPayloadException] if schema or any data field is invalid.
+  static DecryptedVaultPayload validateAndParseDecryptedPayload(String decryptedJson) {
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(decryptedJson);
+    } catch (_) {
+      throw const MalformedBackupPayloadException('Decrypted payload is not valid JSON.');
+    }
+
+    if (decoded is! Map<String, dynamic>) {
+      throw const MalformedBackupPayloadException('Decrypted payload root must be a JSON object.');
+    }
+
+    // 1. Validate Profile
+    if (!decoded.containsKey('profile') || decoded['profile'] == null || decoded['profile'] is! Map) {
+      throw const MalformedBackupPayloadException('Decrypted vault is missing mandatory "profile" section.');
+    }
+
+    final profileMap = Map<String, dynamic>.from(decoded['profile'] as Map);
+    final lastPeriodStartStr = profileMap['last_period_start'];
+    if (lastPeriodStartStr is! String || DateTime.tryParse(lastPeriodStartStr) == null) {
+      throw const MalformedBackupPayloadException('Profile contains missing or invalid "last_period_start" timestamp.');
+    }
+
+    final avgCycleLength = profileMap['avg_cycle_length'];
+    if (avgCycleLength is! int || avgCycleLength < 10 || avgCycleLength > 120) {
+      throw const MalformedBackupPayloadException('Profile contains invalid "avg_cycle_length" (must be an integer between 10 and 120).');
+    }
+
+    final avgPeriodLength = profileMap['avg_period_length'];
+    if (avgPeriodLength is! int || avgPeriodLength < 1 || avgPeriodLength > 30) {
+      throw const MalformedBackupPayloadException('Profile contains invalid "avg_period_length" (must be an integer between 1 and 30).');
+    }
+
+    final initialLastPeriodStartStr = profileMap['initial_last_period_start'];
+    if (initialLastPeriodStartStr != null && (initialLastPeriodStartStr is! String || DateTime.tryParse(initialLastPeriodStartStr) == null)) {
+      throw const MalformedBackupPayloadException('Profile contains invalid "initial_last_period_start" timestamp.');
+    }
+
+    final createdAtStr = profileMap['created_at'];
+    if (createdAtStr != null && (createdAtStr is! String || DateTime.tryParse(createdAtStr) == null)) {
+      throw const MalformedBackupPayloadException('Profile contains invalid "created_at" timestamp.');
+    }
+
+    final UserProfile profile;
+    try {
+      profile = UserProfile.fromMap(profileMap);
+    } catch (e) {
+      throw MalformedBackupPayloadException('Failed to construct UserProfile from schema: $e');
+    }
+
+    // 2. Validate Period Entries
+    final List<PeriodEntry> periodsToImport = [];
+    if (decoded.containsKey('period_entries')) {
+      final periodList = decoded['period_entries'];
+      if (periodList is! List) {
+        throw const MalformedBackupPayloadException('"period_entries" must be a list.');
+      }
+
+      for (int i = 0; i < periodList.length; i++) {
+        final item = periodList[i];
+        if (item is! Map) {
+          throw MalformedBackupPayloadException('Period entry at index $i must be a JSON object.');
+        }
+        final itemMap = Map<String, dynamic>.from(item);
+
+        final id = itemMap['id'];
+        if (id is! String || id.trim().isEmpty) {
+          throw MalformedBackupPayloadException('Period entry at index $i is missing a valid "id".');
+        }
+
+        final tsStr = itemMap['timestamp'];
+        if (tsStr is! String || DateTime.tryParse(tsStr) == null) {
+          throw MalformedBackupPayloadException('Period entry at index $i contains an invalid "timestamp".');
+        }
+
+        final flowStr = itemMap['flow'];
+        final isValidFlow = FlowLevel.values.any((e) => e.name == flowStr);
+        if (flowStr is! String || !isValidFlow) {
+          throw MalformedBackupPayloadException('Period entry at index $i contains an unrecognized "flow" level: $flowStr.');
+        }
+
+        try {
+          periodsToImport.add(PeriodEntry.fromMap(itemMap));
+        } catch (e) {
+          throw MalformedBackupPayloadException('Failed to parse PeriodEntry at index $i: $e');
+        }
+      }
+    }
+
+    // 3. Validate Symptom Entries
+    final List<SymptomEntry> symptomsToImport = [];
+    if (decoded.containsKey('symptom_entries')) {
+      final symptomList = decoded['symptom_entries'];
+      if (symptomList is! List) {
+        throw const MalformedBackupPayloadException('"symptom_entries" must be a list.');
+      }
+
+      for (int i = 0; i < symptomList.length; i++) {
+        final item = symptomList[i];
+        if (item is! Map) {
+          throw MalformedBackupPayloadException('Symptom entry at index $i must be a JSON object.');
+        }
+        final itemMap = Map<String, dynamic>.from(item);
+
+        final id = itemMap['id'];
+        if (id is! String || id.trim().isEmpty) {
+          throw MalformedBackupPayloadException('Symptom entry at index $i is missing a valid "id".');
+        }
+
+        final tsStr = itemMap['timestamp'];
+        if (tsStr is! String || DateTime.tryParse(tsStr) == null) {
+          throw MalformedBackupPayloadException('Symptom entry at index $i contains an invalid "timestamp".');
+        }
+
+        final catStr = itemMap['category'];
+        final isValidCategory = SymptomCategory.values.any((e) => e.name == catStr);
+        if (catStr is! String || !isValidCategory) {
+          throw MalformedBackupPayloadException('Symptom entry at index $i contains an unrecognized "category": $catStr.');
+        }
+
+        final typeStr = itemMap['type'];
+        if (typeStr is! String || typeStr.trim().isEmpty) {
+          throw MalformedBackupPayloadException('Symptom entry at index $i is missing a valid "type".');
+        }
+
+        final intensity = itemMap['intensity'];
+        if (intensity is! int || intensity < 1 || intensity > 5) {
+          throw MalformedBackupPayloadException('Symptom entry at index $i has invalid "intensity": $intensity (must be 1-5).');
+        }
+
+        try {
+          symptomsToImport.add(SymptomEntry.fromMap(itemMap));
+        } catch (e) {
+          throw MalformedBackupPayloadException('Failed to parse SymptomEntry at index $i: $e');
+        }
+      }
+    }
+
+    return DecryptedVaultPayload(
+      profile: profile,
+      periodEntries: periodsToImport,
+      symptomEntries: symptomsToImport,
+    );
   }
 
   /// Constant-time byte comparison to prevent timing attacks.
@@ -201,7 +406,6 @@ class BackupCryptoService {
     int keyOffset = 0;
 
     for (int i = 1; i <= l; i++) {
-      // U1 = PRF(password, salt || INT_32_BE(i))
       final saltBlock = BytesBuilder(copy: false)
         ..add(salt)
         ..addByte((i >> 24) & 0xFF)
@@ -212,7 +416,6 @@ class BackupCryptoService {
       var u = Uint8List.fromList(hmac.convert(saltBlock.toBytes()).bytes);
       var t = Uint8List.fromList(u);
 
-      // U2..Uc
       for (int j = 1; j < iterations; j++) {
         u = Uint8List.fromList(hmac.convert(u).bytes);
         for (int k = 0; k < hLen; k++) {
@@ -323,12 +526,10 @@ class BackupCryptoService {
 
     // 13 Main Rounds
     for (int round = 1; round <= 13; round++) {
-      // SubBytes
       for (int i = 0; i < 16; i++) {
         state[i] = _sbox[state[i]];
       }
 
-      // ShiftRows
       final s0 = state[0], s4 = state[4], s8 = state[8], s12 = state[12];
       final s1 = state[1], s5 = state[5], s9 = state[9], s13 = state[13];
       final s2 = state[2], s6 = state[6], s10 = state[10], s14 = state[14];
@@ -339,7 +540,6 @@ class BackupCryptoService {
       state[2] = s10; state[6] = s14; state[10] = s2; state[14] = s6;
       state[3] = s15; state[7] = s3; state[11] = s7; state[15] = s11;
 
-      // MixColumns
       for (int c = 0; c < 4; c++) {
         final col = c * 4;
         final a0 = state[col], a1 = state[col + 1], a2 = state[col + 2], a3 = state[col + 3];
@@ -349,7 +549,6 @@ class BackupCryptoService {
         state[col + 3] = (_xtimes(a0) ^ a0) ^ a1 ^ a2 ^ _xtimes(a3);
       }
 
-      // AddRoundKey
       for (int i = 0; i < 4; i++) {
         final keyWord = w[round * 4 + i];
         state[4 * i] ^= (keyWord >> 24) & 0xFF;

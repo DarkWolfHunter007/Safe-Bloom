@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
 import 'package:printing/printing.dart';
+import '../../../../core/services/vault_file_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -381,7 +384,7 @@ class SettingsViewState extends State<SettingsView>
     }
   }
 
-  // ── Encrypted Backup Vault (Password-Protected AES-256-CTR + HMAC-SHA256) ──
+  // ── Encrypted Backup Vault File (Password-Protected AES-256-CTR + HMAC-SHA256) ──
 
   Future<void> _exportEncryptedBackupVault() async {
     final passphrase = await showDialog<String>(
@@ -391,80 +394,23 @@ class SettingsViewState extends State<SettingsView>
 
     if (passphrase == null || passphrase.isEmpty || !mounted) return;
 
+    final messenger = ScaffoldMessenger.of(context);
     try {
-      final encryptedVault = await _repository.exportEncryptedVault(passphrase: passphrase);
-      if (!mounted) return;
-
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          backgroundColor: AppColors.lightCardBackground,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      final vaultFile = await _repository.exportEncryptedVaultFile(passphrase: passphrase);
+      await VaultFileService.shareVaultFile(vaultFile);
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Encrypted vault exported: ${p.basename(vaultFile.path)}'),
+            backgroundColor: AppColors.dropCoral,
           ),
-          title: Text(
-            'Encrypted Vault Ready',
-            style: AppTypography.brandTitle(fontSize: 20),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Your encrypted vault is secured and cannot be read without your password:',
-                  style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  decoration: BoxDecoration(
-                    color: AppColors.lightBackground,
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                    border: Border.all(color: AppColors.lightCardBorder),
-                  ),
-                  child: Text(
-                    encryptedVault,
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 10,
-                      color: AppColors.textMain,
-                    ),
-                    maxLines: 8,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text('CLOSE', style: AppTypography.brandTagline(color: AppColors.textMuted, fontSize: 11)),
-            ),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.dropCoral),
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: encryptedVault));
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Encrypted vault copied to clipboard! Keep your password safe.'),
-                    backgroundColor: AppColors.dropCoral,
-                  ),
-                );
-              },
-              icon: const Icon(Icons.copy, size: 14, color: Colors.white),
-              label: Text('COPY ENCRYPTED VAULT', style: AppTypography.brandTagline(color: Colors.white, fontSize: 11)),
-            ),
-          ],
-        ),
-      );
+        );
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(
-            content: Text('Failed to generate encrypted vault: $e'),
+            content: Text('Failed to export encrypted vault: $e'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -473,18 +419,53 @@ class SettingsViewState extends State<SettingsView>
   }
 
   Future<void> _importEncryptedBackupVault() async {
-    final result = await showDialog<Map<String, String>>(
+    final messenger = ScaffoldMessenger.of(context);
+    File? pickedFile;
+    try {
+      pickedFile = await VaultFileService.pickVaultFile();
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Failed to open file picker: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (pickedFile == null || !mounted) return;
+
+    // Validate file envelope structure first before prompting for password
+    try {
+      await VaultFileService.readVaultFile(pickedFile);
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Invalid vault file: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    final fileName = p.basename(pickedFile.path);
+    if (!mounted) return;
+    final passphrase = await showDialog<String>(
       context: context,
-      builder: (dialogCtx) => const _RestoreEncryptedBackupDialog(),
+      builder: (dialogCtx) => _UnlockVaultFileDialog(fileName: fileName),
     );
 
-    if (result == null || !mounted) return;
+    if (passphrase == null || passphrase.isEmpty || !mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
     try {
-      final res = await _repository.importEncryptedVault(
-        vaultJsonString: result['vault']!,
-        passphrase: result['pass']!,
+      final res = await _repository.importEncryptedVaultFile(
+        file: pickedFile,
+        passphrase: passphrase,
+        clearExisting: true,
       );
       await _loadData();
 
@@ -500,7 +481,7 @@ class SettingsViewState extends State<SettingsView>
       if (mounted) {
         messenger.showSnackBar(
           SnackBar(
-            content: Text('Decryption / authentication failed: $e'),
+            content: Text('Restoration failed: $e. Your existing vault was not modified.'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -1271,7 +1252,7 @@ class SettingsViewState extends State<SettingsView>
               onPressed: _exportEncryptedBackupVault,
               icon: const Icon(Icons.lock_outline, color: Colors.white, size: 18),
               label: Text(
-                'CREATE ENCRYPTED BACKUP VAULT',
+                'EXPORT ENCRYPTED VAULT',
                 style: AppTypography.brandTagline(
                   color: Colors.white,
                   fontSize: 11,
@@ -1293,9 +1274,9 @@ class SettingsViewState extends State<SettingsView>
                 ),
               ),
               onPressed: _importEncryptedBackupVault,
-              icon: const Icon(Icons.key_rounded, color: Colors.white, size: 18),
+              icon: const Icon(Icons.file_open_rounded, color: Colors.white, size: 18),
               label: Text(
-                'RESTORE ENCRYPTED VAULT',
+                'IMPORT ENCRYPTED VAULT',
                 style: AppTypography.brandTagline(
                   color: Colors.white,
                   fontSize: 11,
@@ -1385,7 +1366,7 @@ class _CreateEncryptedBackupDialogState extends State<_CreateEncryptedBackupDial
           const Icon(Icons.shield_outlined, color: AppColors.dropCoral, size: 22),
           const SizedBox(width: 8),
           Text(
-            'Create Encrypted Backup',
+            'Create Encrypted Vault File',
             style: AppTypography.brandTitle(fontSize: 18),
           ),
         ],
@@ -1396,7 +1377,7 @@ class _CreateEncryptedBackupDialogState extends State<_CreateEncryptedBackupDial
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Your backup will be encrypted using PBKDF2-HMAC-SHA256 (20,000 iterations) + AES-256-CTR with HMAC-SHA256 authentication. Set a strong password to protect your intimate health data.',
+              'Your vault will be encrypted using PBKDF2-HMAC-SHA256 (20,000 iterations) + AES-256-CTR with HMAC-SHA256 authentication. Set a strong password to protect your intimate health data.',
               style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -1466,28 +1447,27 @@ class _CreateEncryptedBackupDialogState extends State<_CreateEncryptedBackupDial
             }
             Navigator.of(context).pop(p1);
           },
-          child: Text('ENCRYPT & EXPORT', style: AppTypography.brandTagline(color: Colors.white, fontSize: 11)),
+          child: Text('ENCRYPT & EXPORT FILE', style: AppTypography.brandTagline(color: Colors.white, fontSize: 11)),
         ),
       ],
     );
   }
 }
 
-class _RestoreEncryptedBackupDialog extends StatefulWidget {
-  const _RestoreEncryptedBackupDialog();
+class _UnlockVaultFileDialog extends StatefulWidget {
+  final String fileName;
+  const _UnlockVaultFileDialog({required this.fileName});
 
   @override
-  State<_RestoreEncryptedBackupDialog> createState() => _RestoreEncryptedBackupDialogState();
+  State<_UnlockVaultFileDialog> createState() => _UnlockVaultFileDialogState();
 }
 
-class _RestoreEncryptedBackupDialogState extends State<_RestoreEncryptedBackupDialog> {
-  final TextEditingController _vaultController = TextEditingController();
+class _UnlockVaultFileDialogState extends State<_UnlockVaultFileDialog> {
   final TextEditingController _passwordController = TextEditingController();
   bool _obscure = true;
 
   @override
   void dispose() {
-    _vaultController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -1499,54 +1479,54 @@ class _RestoreEncryptedBackupDialogState extends State<_RestoreEncryptedBackupDi
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       ),
-      title: Text(
-        'Restore Encrypted Vault',
-        style: AppTypography.brandTitle(fontSize: 18),
+      title: Row(
+        children: [
+          const Icon(Icons.lock_open_rounded, color: AppColors.deepPlum, size: 22),
+          const SizedBox(width: 8),
+          Text(
+            'Unlock Vault File',
+            style: AppTypography.brandTitle(fontSize: 18),
+          ),
+        ],
       ),
       content: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'Paste your encrypted vault payload and enter your password to authenticate and restore data:',
-              style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.sm),
+              decoration: BoxDecoration(
+                color: AppColors.lightBackground,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                border: Border.all(color: AppColors.lightCardBorder),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.description_outlined, size: 18, color: AppColors.dropCoral),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.fileName,
+                      style: AppTypography.body(fontSize: 12, fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: AppSpacing.sm),
-            TextField(
-              controller: _vaultController,
-              maxLines: 5,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
-              decoration: InputDecoration(
-                hintText: 'Paste {"safe_bloom_backup_version": 1, ...}',
-                filled: true,
-                fillColor: AppColors.lightBackground,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                  borderSide: const BorderSide(color: AppColors.lightCardBorder),
-                ),
-              ),
+            Text(
+              'Enter the password to decrypt, validate, and restore this encrypted vault:',
+              style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
             ),
-            const SizedBox(height: AppSpacing.xs),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () async {
-                  final data = await Clipboard.getData(Clipboard.kTextPlain);
-                  if (data != null && data.text != null) {
-                    _vaultController.text = data.text!;
-                  }
-                },
-                icon: const Icon(Icons.paste, size: 14, color: AppColors.dropCoral),
-                label: Text('PASTE VAULT', style: AppTypography.brandTagline(color: AppColors.dropCoral, fontSize: 10)),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.md),
             TextField(
               controller: _passwordController,
               obscureText: _obscure,
               decoration: InputDecoration(
                 labelText: 'Vault Password',
+                labelStyle: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
                 filled: true,
                 fillColor: AppColors.lightBackground,
                 border: OutlineInputBorder(
@@ -1570,20 +1550,19 @@ class _RestoreEncryptedBackupDialogState extends State<_RestoreEncryptedBackupDi
         ElevatedButton(
           style: ElevatedButton.styleFrom(backgroundColor: AppColors.deepPlum),
           onPressed: () {
-            final vault = _vaultController.text.trim();
             final pass = _passwordController.text.trim();
-            if (vault.isEmpty || pass.isEmpty) {
+            if (pass.isEmpty) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Please provide both the vault text and the password.'),
+                  content: Text('Please enter your vault password.'),
                   backgroundColor: AppColors.petalRose,
                 ),
               );
               return;
             }
-            Navigator.of(context).pop({'vault': vault, 'pass': pass});
+            Navigator.of(context).pop(pass);
           },
-          child: Text('AUTHENTICATE & RESTORE', style: AppTypography.brandTagline(color: Colors.white, fontSize: 11)),
+          child: Text('DECRYPT & RESTORE', style: AppTypography.brandTagline(color: Colors.white, fontSize: 11)),
         ),
       ],
     );

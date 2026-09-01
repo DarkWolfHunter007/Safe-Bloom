@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:safe_bloom/core/services/backup_crypto_service.dart';
 import 'package:safe_bloom/core/services/local_notification_service.dart';
 import 'package:safe_bloom/core/services/secure_storage_service.dart';
+import 'package:safe_bloom/core/services/vault_file_service.dart';
 import 'package:safe_bloom/core/utils/cycle_group_utils.dart';
 import 'package:safe_bloom/core/utils/safe_bloom_date_utils.dart';
 import '../datasources/database_helper.dart';
@@ -185,7 +187,7 @@ class TrackingRepository {
     return const JsonEncoder.withIndent('  ').convert(data);
   }
 
-  /// Exports an authenticated, password-encrypted backup vault.
+  /// Exports an authenticated, password-encrypted backup vault JSON string.
   Future<String> exportEncryptedVault({required String passphrase}) async {
     final plaintextJson = await exportUserDataJson();
     return BackupCryptoService.encryptVault(
@@ -194,65 +196,67 @@ class TrackingRepository {
     );
   }
 
-  /// Atomically imports unencrypted JSON data in a single ACID transaction.
+  /// Exports an authenticated, password-encrypted .safebloom vault file.
+  Future<File> exportEncryptedVaultFile({
+    required String passphrase,
+    Directory? targetDir,
+    String? customFileName,
+  }) async {
+    final encryptedVault = await exportEncryptedVault(passphrase: passphrase);
+    return await VaultFileService.createVaultFile(
+      vaultContent: encryptedVault,
+      directory: targetDir,
+      customFileName: customFileName,
+    );
+  }
+
+  /// Atomically imports unencrypted JSON data in a single ACID transaction after strict schema validation.
   /// If any entry is invalid or parsing fails, the database is restored untouched.
-  Future<Map<String, int>> importUserDataJson(String jsonStr) async {
-    final dynamic decoded = jsonDecode(jsonStr);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('Import payload must be a JSON object.');
-    }
-
-    UserProfile? profileToImport;
-    if (decoded.containsKey('profile') && decoded['profile'] != null) {
-      final profileMap = Map<String, dynamic>.from(decoded['profile']);
-      profileToImport = UserProfile.fromMap(profileMap);
-    }
-
-    final List<PeriodEntry> periodsToImport = [];
-    if (decoded.containsKey('period_entries') && decoded['period_entries'] is List) {
-      final List periodList = decoded['period_entries'];
-      for (final item in periodList) {
-        if (item is Map) {
-          periodsToImport.add(PeriodEntry.fromMap(Map<String, dynamic>.from(item)));
-        }
-      }
-    }
-
-    final List<SymptomEntry> symptomsToImport = [];
-    if (decoded.containsKey('symptom_entries') && decoded['symptom_entries'] is List) {
-      final List symptomList = decoded['symptom_entries'];
-      for (final item in symptomList) {
-        if (item is Map) {
-          symptomsToImport.add(SymptomEntry.fromMap(Map<String, dynamic>.from(item)));
-        }
-      }
-    }
+  Future<Map<String, int>> importUserDataJson(String jsonStr, {bool clearExisting = true}) async {
+    final payload = BackupCryptoService.validateAndParseDecryptedPayload(jsonStr);
 
     // Execute in a single atomic ACID transaction
     await _dbHelper.executeAtomicImport(
-      profile: profileToImport,
-      periodEntries: periodsToImport,
-      symptomEntries: symptomsToImport,
+      profile: payload.profile,
+      periodEntries: payload.periodEntries,
+      symptomEntries: payload.symptomEntries,
+      clearExisting: clearExisting,
     );
 
     await _recalculateProfileAverages();
 
     return {
-      'periods': periodsToImport.length,
-      'symptoms': symptomsToImport.length,
+      'periods': payload.periodEntries.length,
+      'symptoms': payload.symptomEntries.length,
     };
   }
 
-  /// Decrypts and atomically imports an authenticated password-encrypted vault.
+  /// Decrypts, verifies MAC integrity, validates schema, and atomically imports an encrypted vault.
+  /// If any cryptographic or schema check fails, the existing database is left 100% untouched.
   Future<Map<String, int>> importEncryptedVault({
     required String vaultJsonString,
     required String passphrase,
+    bool clearExisting = true,
   }) async {
     final decryptedJson = BackupCryptoService.decryptVault(
       vaultJsonString: vaultJsonString,
       passphrase: passphrase,
     );
-    return importUserDataJson(decryptedJson);
+    return importUserDataJson(decryptedJson, clearExisting: clearExisting);
+  }
+
+  /// Reads an encrypted vault file from disk, decrypts, validates, and atomically restores it.
+  Future<Map<String, int>> importEncryptedVaultFile({
+    required File file,
+    required String passphrase,
+    bool clearExisting = true,
+  }) async {
+    final vaultJsonString = await VaultFileService.readVaultFile(file);
+    return importEncryptedVault(
+      vaultJsonString: vaultJsonString,
+      passphrase: passphrase,
+      clearExisting: clearExisting,
+    );
   }
 
   /// Safely recovers from database corruption by decrypting a backup vault and
@@ -270,51 +274,35 @@ class TrackingRepository {
     return recoverAndRestoreFromJson(decryptedJson);
   }
 
+  /// Safely recovers from database corruption by reading an encrypted vault file from disk,
+  /// decrypting it with password, validating schema, and recreating the database.
+  Future<Map<String, int>> recoverAndRestoreFromEncryptedVaultFile({
+    required File file,
+    required String passphrase,
+  }) async {
+    final vaultJsonString = await VaultFileService.readVaultFile(file);
+    return recoverAndRestoreFromEncryptedVault(
+      vaultJsonString: vaultJsonString,
+      passphrase: passphrase,
+    );
+  }
+
   /// Recreates the database and imports valid JSON data.
   /// Validates all entries BEFORE replacing the database file on disk.
   Future<Map<String, int>> recoverAndRestoreFromJson(String jsonStr) async {
-    final dynamic decoded = jsonDecode(jsonStr);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('Import payload must be a JSON object.');
-    }
-
-    UserProfile? profileToImport;
-    if (decoded.containsKey('profile') && decoded['profile'] != null) {
-      final profileMap = Map<String, dynamic>.from(decoded['profile']);
-      profileToImport = UserProfile.fromMap(profileMap);
-    }
-
-    final List<PeriodEntry> periodsToImport = [];
-    if (decoded.containsKey('period_entries') && decoded['period_entries'] is List) {
-      final List periodList = decoded['period_entries'];
-      for (final item in periodList) {
-        if (item is Map) {
-          periodsToImport.add(PeriodEntry.fromMap(Map<String, dynamic>.from(item)));
-        }
-      }
-    }
-
-    final List<SymptomEntry> symptomsToImport = [];
-    if (decoded.containsKey('symptom_entries') && decoded['symptom_entries'] is List) {
-      final List symptomList = decoded['symptom_entries'];
-      for (final item in symptomList) {
-        if (item is Map) {
-          symptomsToImport.add(SymptomEntry.fromMap(Map<String, dynamic>.from(item)));
-        }
-      }
-    }
+    final payload = BackupCryptoService.validateAndParseDecryptedPayload(jsonStr);
 
     await _dbHelper.resetAndRecreateDatabase(
-      profile: profileToImport,
-      periodEntries: periodsToImport,
-      symptomEntries: symptomsToImport,
+      profile: payload.profile,
+      periodEntries: payload.periodEntries,
+      symptomEntries: payload.symptomEntries,
     );
 
     await _recalculateProfileAverages();
 
     return {
-      'periods': periodsToImport.length,
-      'symptoms': symptomsToImport.length,
+      'periods': payload.periodEntries.length,
+      'symptoms': payload.symptomEntries.length,
     };
   }
 

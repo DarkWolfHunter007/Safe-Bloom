@@ -88,7 +88,9 @@ class UserProfile {
           ? (map['is_pregnancy_mode_enabled'] == 1)
           : defaultPreg,
       preferredGoal: goal,
-      createdAt: DateTime.parse(map['created_at']),
+      createdAt: map['created_at'] != null
+          ? DateTime.parse(map['created_at'])
+          : DateTime.now(),
     );
   }
 }
