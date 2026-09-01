@@ -116,17 +116,20 @@ class BackupCryptoService {
   /// Pre-validates the unencrypted container envelope headers and structure.
   /// Throws [MalformedBackupPayloadException] or [UnsupportedVaultVersionException] on failure.
   static Map<String, dynamic> validateVaultEnvelope(String vaultJsonString) {
-    if (vaultJsonString.trim().isEmpty) {
+    var rawString = vaultJsonString.trim();
+    if (rawString.startsWith('\uFEFF')) {
+      rawString = rawString.substring(1).trim();
+    }
+    if (rawString.isEmpty) {
       throw const MalformedBackupPayloadException('Backup file is empty.');
     }
-
-    if (vaultJsonString.length > kMaxPayloadBytes) {
-      throw const MalformedBackupPayloadException('Backup file exceeds maximum allowed size (10 MB).');
+    if (rawString.length > kMaxPayloadBytes) {
+      throw const MalformedBackupPayloadException('Backup file exceeds maximum permitted size (10 MB).');
     }
 
     dynamic decoded;
     try {
-      decoded = jsonDecode(vaultJsonString);
+      decoded = jsonDecode(rawString);
     } catch (_) {
       throw const MalformedBackupPayloadException('Invalid JSON formatting in backup file.');
     }

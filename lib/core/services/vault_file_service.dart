@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
@@ -65,11 +66,11 @@ class VaultFileService {
   }
 
   /// Opens the native system file picker for the user to select an encrypted vault file.
-  /// Filters for .safebloom and .json files.
+  /// Uses FileType.any with in-memory data fetching to support Scoped Storage on all Android ROMs.
   static Future<File?> pickVaultFile() async {
     final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: [BackupCryptoService.kVaultFileExtension, 'json'],
+      type: FileType.any,
+      withData: true,
       allowMultiple: false,
     );
 
@@ -77,21 +78,32 @@ class VaultFileService {
       return null;
     }
 
-    final path = result.files.single.path;
-    if (path != null && path.isNotEmpty) {
-      final file = File(path);
-      if (await file.exists()) {
-        return file;
-      }
-    }
+    final single = result.files.single;
 
-    // Fallback if path is null (e.g. web/in-memory bytes stream)
-    final bytes = result.files.single.bytes;
+    // 1. If bytes are available, write directly to local app cache to guarantee readable File access
+    final bytes = single.bytes;
     if (bytes != null && bytes.isNotEmpty) {
       final tempDir = await getTemporaryDirectory();
-      final tempFile = File(p.join(tempDir.path, result.files.single.name));
+      final safeName = single.name.isNotEmpty ? single.name : generateVaultFileName();
+      final tempFile = File(p.join(tempDir.path, safeName));
       await tempFile.writeAsBytes(bytes, flush: true);
       return tempFile;
+    }
+
+    // 2. If path is available, copy to app cache for reliable I/O
+    final path = single.path;
+    if (path != null && path.isNotEmpty) {
+      final sourceFile = File(path);
+      if (await sourceFile.exists()) {
+        try {
+          final tempDir = await getTemporaryDirectory();
+          final safeName = single.name.isNotEmpty ? single.name : p.basename(path);
+          final targetFile = File(p.join(tempDir.path, safeName));
+          return await sourceFile.copy(targetFile.path);
+        } catch (_) {
+          return sourceFile;
+        }
+      }
     }
 
     return null;
@@ -112,7 +124,12 @@ class VaultFileService {
       throw const MalformedBackupPayloadException('Vault file exceeds maximum permitted size (10 MB).');
     }
 
-    final content = await file.readAsString();
+    String content = await file.readAsString();
+    if (content.startsWith('\uFEFF')) {
+      content = content.substring(1);
+    }
+    content = content.trim();
+
     // Validate envelope structure immediately
     BackupCryptoService.validateVaultEnvelope(content);
     return content;
@@ -128,7 +145,12 @@ class VaultFileService {
       throw const MalformedBackupPayloadException('Vault file exceeds maximum permitted size (10 MB).');
     }
 
-    final content = String.fromCharCodes(bytes);
+    String content = utf8.decode(bytes);
+    if (content.startsWith('\uFEFF')) {
+      content = content.substring(1);
+    }
+    content = content.trim();
+
     BackupCryptoService.validateVaultEnvelope(content);
     return content;
   }
