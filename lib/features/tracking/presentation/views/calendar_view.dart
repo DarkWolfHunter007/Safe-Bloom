@@ -511,180 +511,189 @@ class CalendarViewState extends State<CalendarView> {
           _buildRangeActionCard(),
 
           // Calendar Card Grid
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: AppColors.lightCardBackground,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              border: Border.all(color: AppColors.lightCardBorder),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.02),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                )
-              ],
-            ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day) {
-                    return Text(day, style: AppTypography.brandTagline(color: AppColors.textMuted, fontSize: 10));
-                  }).toList(),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 7,
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
+          RepaintBoundary(
+            child: Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.lightCardBackground,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(color: AppColors.lightCardBorder),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.02),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  )
+                ],
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day) {
+                      return Text(day, style: AppTypography.brandTagline(color: AppColors.textMuted, fontSize: 10));
+                    }).toList(),
                   ),
-                  itemCount: daysInMonth + leadingOffset,
-                  itemBuilder: (context, index) {
-                    if (index < leadingOffset) {
-                      return const SizedBox.shrink();
-                    }
+                  const SizedBox(height: AppSpacing.sm),
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 7,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                    ),
+                    itemCount: daysInMonth + leadingOffset,
+                    itemBuilder: (context, index) {
+                      if (index < leadingOffset) {
+                        return const SizedBox.shrink();
+                      }
 
-                    final day = index - leadingOffset + 1;
-                    final date = DateTime(_displayMonth.year, _displayMonth.month, day);
-                    final cleanDate = SafeBloomDateUtils.dateOnly(date);
-                    final now = DateTime.now();
-                    final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
-                    final isSelected = date.year == _selectedDate.year &&
-                        date.month == _selectedDate.month &&
-                        date.day == _selectedDate.day;
+                      final day = index - leadingOffset + 1;
+                      final date = DateTime(_displayMonth.year, _displayMonth.month, day);
+                      final cleanDate = SafeBloomDateUtils.dateOnly(date);
+                      final now = DateTime.now();
+                      final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
+                      final isSelected = date.year == _selectedDate.year &&
+                          date.month == _selectedDate.month &&
+                          date.day == _selectedDate.day;
 
-                    final bool isInRange = _rangeStartDate != null &&
-                        _rangeEndDate != null &&
-                        !cleanDate.isBefore(_rangeStartDate!) &&
-                        !cleanDate.isAfter(_rangeEndDate!);
-                    final bool isRangeStart = _rangeStartDate != null && cleanDate == _rangeStartDate;
-                    final bool isRangeEnd = _rangeEndDate != null && cleanDate == _rangeEndDate;
+                      final bool isInRange = _rangeStartDate != null &&
+                          _rangeEndDate != null &&
+                          !cleanDate.isBefore(_rangeStartDate!) &&
+                          !cleanDate.isAfter(_rangeEndDate!);
+                      final bool isRangeStart = _rangeStartDate != null && cleanDate == _rangeStartDate;
+                      final bool isRangeEnd = _rangeEndDate != null && cleanDate == _rangeEndDate;
 
-                    final dayStatus = _getDayStatus(date);
-                    final hasSymptoms = _symptomsByDate.containsKey(cleanDate);
+                      final dayStatus = _getDayStatus(date);
+                      final hasSymptoms = _symptomsByDate.containsKey(cleanDate);
 
-                    // Styling decisions per dayStatus
-                    Color cellColor;
-                    Border cellBorder;
-                    Color textColor;
+                      // Styling decisions per dayStatus
+                      Color cellColor;
+                      Border cellBorder;
+                      Color textColor;
 
-                    switch (dayStatus) {
-                      case CalendarDayStatus.loggedPeriod:
+                      switch (dayStatus) {
+                        case CalendarDayStatus.loggedPeriod:
+                          cellColor = AppColors.dropCoral;
+                          cellBorder = isSelected
+                              ? Border.all(color: AppColors.deepPlum, width: 2.5)
+                              : isToday
+                                  ? Border.all(color: AppColors.deepPlum, width: 1.5)
+                                  : Border.all(color: AppColors.dropCoral);
+                          textColor = Colors.white;
+                          break;
+                        case CalendarDayStatus.predictedPeriod:
+                          cellColor = AppColors.petalRose.withValues(alpha: 0.22);
+                          cellBorder = isSelected
+                              ? Border.all(color: AppColors.deepPlum, width: 2.5)
+                              : isToday
+                                  ? Border.all(color: AppColors.deepPlum, width: 1.5)
+                                  : Border.all(color: AppColors.petalRose.withValues(alpha: 0.45));
+                          textColor = AppColors.petalRose;
+                          break;
+                        case CalendarDayStatus.ovulation:
+                          cellColor = AppColors.phaseOvulation.withValues(alpha: 0.18);
+                          cellBorder = isSelected
+                              ? Border.all(color: AppColors.deepPlum, width: 2.5)
+                              : isToday
+                                  ? Border.all(color: AppColors.deepPlum, width: 1.5)
+                                  : Border.all(color: AppColors.phaseOvulation.withValues(alpha: 0.4));
+                          textColor = AppColors.deepPlum;
+                          break;
+                        case CalendarDayStatus.follicular:
+                          cellColor = AppColors.phaseFollicular.withValues(alpha: 0.15);
+                          cellBorder = isSelected
+                              ? Border.all(color: AppColors.deepPlum, width: 2.5)
+                              : isToday
+                                  ? Border.all(color: AppColors.deepPlum, width: 1.5)
+                                  : Border.all(color: Colors.transparent);
+                          textColor = AppColors.textMain;
+                          break;
+                        case CalendarDayStatus.luteal:
+                          cellColor = AppColors.phaseLuteal.withValues(alpha: 0.15);
+                          cellBorder = isSelected
+                              ? Border.all(color: AppColors.deepPlum, width: 2.5)
+                              : isToday
+                                  ? Border.all(color: AppColors.deepPlum, width: 1.5)
+                                  : Border.all(color: Colors.transparent);
+                          textColor = AppColors.textMain;
+                          break;
+                        case CalendarDayStatus.regular:
+                          cellColor = AppColors.lightBackground;
+                          cellBorder = isSelected
+                              ? Border.all(color: AppColors.deepPlum, width: 2.5)
+                              : isToday
+                                  ? Border.all(color: AppColors.deepPlum, width: 1.5)
+                                  : Border.all(color: Colors.transparent);
+                          textColor = AppColors.textMain;
+                          break;
+                      }
+
+                      // Range highlight override
+                      if (isInRange) {
+                        cellColor = AppColors.petalRose.withValues(alpha: 0.45);
+                        cellBorder = Border.all(color: AppColors.dropCoral, width: 1.5);
+                        textColor = AppColors.deepPlum;
+                      }
+                      if (isRangeStart || isRangeEnd) {
                         cellColor = AppColors.dropCoral;
-                        cellBorder = isSelected
-                            ? Border.all(color: AppColors.deepPlum, width: 2.5)
-                            : isToday
-                                ? Border.all(color: AppColors.dropCoral, width: 2)
-                                : Border.all(color: AppColors.dropCoral, width: 1);
+                        cellBorder = Border.all(color: AppColors.deepPlum, width: 2.0);
                         textColor = Colors.white;
-                        break;
-                      case CalendarDayStatus.predictedPeriod:
-                        cellColor = AppColors.dropCoral.withValues(alpha: 0.15);
-                        cellBorder = isSelected
-                            ? Border.all(color: AppColors.dropCoral, width: 2.5)
-                            : isToday
-                                ? Border.all(color: AppColors.dropCoral, width: 2)
-                                : Border.all(color: AppColors.dropCoral, width: 1.5);
-                        textColor = isSelected ? AppColors.dropCoral : AppColors.textMain;
-                        break;
-                      case CalendarDayStatus.follicular:
-                        cellColor = isSelected ? AppColors.phaseFollicular : AppColors.phaseFollicular.withValues(alpha: 0.2);
-                        cellBorder = isSelected
-                            ? Border.all(color: AppColors.dropCoral, width: 2)
-                            : isToday
-                                ? Border.all(color: AppColors.dropCoral, width: 1.5)
-                                : Border.all(color: AppColors.phaseFollicular.withValues(alpha: 0.4));
-                        textColor = isSelected ? Colors.white : (isToday ? AppColors.dropCoral : AppColors.textMain);
-                        break;
-                      case CalendarDayStatus.ovulation:
-                        cellColor = isSelected ? AppColors.phaseOvulation : AppColors.phaseOvulation.withValues(alpha: 0.2);
-                        cellBorder = isSelected
-                            ? Border.all(color: AppColors.dropCoral, width: 2)
-                            : isToday
-                                ? Border.all(color: AppColors.dropCoral, width: 1.5)
-                                : Border.all(color: AppColors.phaseOvulation.withValues(alpha: 0.4));
-                        textColor = isSelected ? Colors.white : (isToday ? AppColors.dropCoral : AppColors.textMain);
-                        break;
-                      case CalendarDayStatus.luteal:
-                        cellColor = isSelected ? AppColors.phaseLuteal : AppColors.phaseLuteal.withValues(alpha: 0.2);
-                        cellBorder = isSelected
-                            ? Border.all(color: AppColors.dropCoral, width: 2)
-                            : isToday
-                                ? Border.all(color: AppColors.dropCoral, width: 1.5)
-                                : Border.all(color: AppColors.phaseLuteal.withValues(alpha: 0.4));
-                        textColor = isSelected ? Colors.white : (isToday ? AppColors.dropCoral : AppColors.textMain);
-                        break;
-                      case CalendarDayStatus.regular:
-                        cellColor = isSelected ? AppColors.dropCoral.withValues(alpha: 0.2) : AppColors.lightBackground;
-                        cellBorder = isSelected
-                            ? Border.all(color: AppColors.dropCoral, width: 2)
-                            : isToday
-                                ? Border.all(color: AppColors.dropCoral, width: 1.5)
-                                : Border.all(color: AppColors.lightCardBorder);
-                        textColor = isToday ? AppColors.dropCoral : AppColors.textMain;
-                        break;
-                    }
+                      }
 
-                    if (isInRange) {
-                      cellColor = AppColors.dropCoral.withValues(alpha: 0.25);
-                      cellBorder = Border.all(
-                        color: AppColors.dropCoral,
-                        width: (isRangeStart || isRangeEnd) ? 2.5 : 1.5,
-                      );
-                    } else if (isRangeStart) {
-                      cellBorder = Border.all(color: AppColors.dropCoral, width: 2.5);
-                    }
-
-                    return BouncingCalendarCell(
-                      onTap: () => _onDateCellTapped(date),
-                      onLongPress: () => _onDateCellLongPressed(date),
-                      onDoubleTap: () => _openLoggerForSelectedDate(date),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        decoration: BoxDecoration(
-                          color: cellColor,
-                          borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                          border: cellBorder,
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (_predictedPeakOvulationDates.contains(date)) ...[
-                              const Icon(Icons.star_rounded, size: 10, color: Color(0xFFD4AF37)),
-                              const SizedBox(height: 1),
-                            ],
-                            Text(
-                              '$day',
-                              style: AppTypography.body(
-                                fontSize: 13,
-                                fontWeight: (isSelected || isToday || dayStatus == CalendarDayStatus.loggedPeriod || isRangeStart || isRangeEnd)
-                                    ? FontWeight.bold
-                                    : FontWeight.w600,
-                                color: (isInRange && dayStatus != CalendarDayStatus.loggedPeriod) ? AppColors.dropCoral : textColor,
-                              ),
-                            ),
-                            if (hasSymptoms) ...[
-                              const SizedBox(height: 2),
-                              Container(
-                                width: 4,
-                                height: 4,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: dayStatus == CalendarDayStatus.loggedPeriod ? Colors.white : AppColors.dropCoral,
+                      return GestureDetector(
+                        onTap: () => _onDateCellTapped(date),
+                        onLongPress: () => _onDateCellLongPressed(date),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          decoration: BoxDecoration(
+                            color: cellColor,
+                            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                            border: cellBorder,
+                          ),
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              if (_predictedPeakOvulationDates.contains(date)) ...[
+                                const Positioned(
+                                  top: 3,
+                                  child: Icon(Icons.star_rounded, size: 8, color: Color(0xFFD4AF37)),
+                                ),
+                              ],
+                              Text(
+                                '$day',
+                                style: AppTypography.body(
+                                  fontSize: 13,
+                                  fontWeight: (isToday || isSelected || isRangeStart || isRangeEnd)
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: textColor,
                                 ),
                               ),
-                            ]
-                          ],
+                              if (hasSymptoms) ...[
+                                Positioned(
+                                  bottom: 3,
+                                  child: Container(
+                                    width: 4,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: dayStatus == CalendarDayStatus.loggedPeriod || isRangeStart || isRangeEnd
+                                          ? Colors.white
+                                          : AppColors.dropCoral,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                )
+                              ]
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-              ],
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: AppSpacing.md),

@@ -248,15 +248,28 @@ class DatabaseHelper {
     ''');
   }
 
+  Future<void> _addColumnIfNotExists(
+    Database db,
+    String table,
+    String column,
+    String typeWithConstraints,
+  ) async {
+    final columns = await db.rawQuery('PRAGMA table_info($table)');
+    final exists = columns.any((col) => col['name'] == column);
+    if (!exists) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $typeWithConstraints');
+    }
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      await db.execute('ALTER TABLE user_profile ADD COLUMN preferred_goal TEXT');
+      await _addColumnIfNotExists(db, 'user_profile', 'preferred_goal', 'TEXT');
     }
     if (oldVersion < 3) {
-      await db.execute('ALTER TABLE user_profile ADD COLUMN initial_last_period_start TEXT');
+      await _addColumnIfNotExists(db, 'user_profile', 'initial_last_period_start', 'TEXT');
     }
     if (oldVersion < 4) {
-      await db.execute('ALTER TABLE user_profile ADD COLUMN is_pregnancy_mode_enabled INTEGER NOT NULL DEFAULT 0');
+      await _addColumnIfNotExists(db, 'user_profile', 'is_pregnancy_mode_enabled', 'INTEGER NOT NULL DEFAULT 0');
     }
   }
 
