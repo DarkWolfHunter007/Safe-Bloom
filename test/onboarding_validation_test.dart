@@ -75,4 +75,49 @@ void main() {
     // Advances to Cycle Duration step
     expect(find.text('How long is your typical cycle?'), findsOneWidget);
   });
+
+  testWidgets('OnboardingView allows opening and interacting with Restore Encrypted Vault UI', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: OnboardingView(),
+      ),
+    );
+
+    // Step 0: Welcome Screen -> Click 'Restore from Vault'
+    expect(find.byKey(const ValueKey('onboarding_restore_vault')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('onboarding_restore_vault')));
+    await tester.pumpAndSettle();
+
+    // Verify Restore Encrypted Vault screen is visible with .safebloom picker
+    expect(find.text('Restore Encrypted Vault'), findsOneWidget);
+    expect(find.byKey(const ValueKey('onboarding_pick_vault_file')), findsOneWidget);
+    expect(find.text('SELECT .SAFEBLOOM FILE'), findsOneWidget);
+    expect(find.text('RESTORE VAULT'), findsOneWidget);
+
+    // Toggle text fallback (ensure visible in SingleChildScrollView)
+    final fallbackFinder = find.text('Paste encrypted text backup instead');
+    expect(fallbackFinder, findsOneWidget);
+    await tester.ensureVisible(fallbackFinder);
+    await tester.pumpAndSettle();
+    await tester.tap(fallbackFinder);
+    await tester.pumpAndSettle();
+
+    final fileOptionFinder = find.text('← Select .safebloom file instead');
+    expect(fileOptionFinder, findsOneWidget);
+
+    // Toggle back to file picker
+    await tester.ensureVisible(fileOptionFinder);
+    await tester.pumpAndSettle();
+    await tester.tap(fileOptionFinder);
+    await tester.pumpAndSettle();
+    expect(find.text('SELECT .SAFEBLOOM FILE'), findsOneWidget);
+
+    // Tap Back button to return to Welcome cards
+    expect(find.text('Back'), findsOneWidget);
+    await tester.tap(find.text('Back'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('onboarding_start_fresh')), findsOneWidget);
+    expect(find.byKey(const ValueKey('onboarding_restore_vault')), findsOneWidget);
+  });
 }

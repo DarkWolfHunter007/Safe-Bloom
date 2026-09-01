@@ -7,7 +7,7 @@
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
 [![Dart](https://img.shields.io/badge/Dart-3.x-0175C2?style=for-the-badge&logo=dart&logoColor=white)](https://dart.dev)
 [![Release](https://img.shields.io/badge/Release-v1.0.0-E05A47?style=for-the-badge)](https://github.com/DarkWolfHunter007/Safe-Bloom/releases/tag/v1.0.0)
-[![Tests](https://img.shields.io/badge/Tests-268%2F268%20Passed%20(100%25)-4E8752?style=for-the-badge)](https://github.com/DarkWolfHunter007/Safe-Bloom)
+[![Tests](https://img.shields.io/badge/Tests-269%2F269%20Passed%20(100%25)-4E8752?style=for-the-badge)](https://github.com/DarkWolfHunter007/Safe-Bloom)
 [![Encryption](https://img.shields.io/badge/Database-SQLCipher%20AES--256-5B2C6F?style=for-the-badge)](https://www.zetetic.net/sqlcipher/)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 

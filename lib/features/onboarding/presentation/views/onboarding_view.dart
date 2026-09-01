@@ -1,6 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
+import '../../../../core/services/backup_crypto_service.dart';
 import '../../../../core/services/local_notification_service.dart';
+import '../../../../core/services/vault_file_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -43,13 +47,17 @@ class _OnboardingViewState extends State<OnboardingView> {
   // Restore vault state (page 0)
   bool _showRestoreForm = false;
   bool _isRestoring = false;
-  final TextEditingController _restoreVaultController = TextEditingController();
+  File? _pickedVaultFile;
+  String? _pickedVaultFileName;
+  int? _pickedVaultFileSize;
+  bool _showTextPasteFallback = false;
+  final TextEditingController _restoreVaultTextController = TextEditingController();
   final TextEditingController _restorePasswordController = TextEditingController();
   bool _restoreObscure = true;
 
   @override
   void dispose() {
-    _restoreVaultController.dispose();
+    _restoreVaultTextController.dispose();
     _restorePasswordController.dispose();
     super.dispose();
   }
@@ -127,14 +135,49 @@ class _OnboardingViewState extends State<OnboardingView> {
     await _completeOnboarding();
   }
 
+  Future<void> _pickVaultFileForRestore() async {
+    try {
+      final file = await VaultFileService.pickVaultFile();
+      if (file == null || !mounted) return;
+
+      // Pre-validate file envelope
+      await VaultFileService.readVaultFile(file);
+
+      final size = await file.length();
+      setState(() {
+        _pickedVaultFile = file;
+        _pickedVaultFileName = p.basename(file.path);
+        _pickedVaultFileSize = size;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Invalid vault file: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _handleRestoreVault() async {
-    final vault = _restoreVaultController.text.trim();
     final password = _restorePasswordController.text.trim();
 
-    if (vault.isEmpty || password.isEmpty) {
+    if (password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please paste your vault and enter the password.'),
+          content: Text('Please enter your vault password.'),
+          backgroundColor: AppColors.petalRose,
+        ),
+      );
+      return;
+    }
+
+    if (_pickedVaultFile == null && !_showTextPasteFallback) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select an encrypted vault file (.safebloom).'),
           backgroundColor: AppColors.petalRose,
         ),
       );
@@ -144,15 +187,27 @@ class _OnboardingViewState extends State<OnboardingView> {
     setState(() => _isRestoring = true);
 
     try {
-      await _repository.recoverAndRestoreFromEncryptedVault(
-        vaultJsonString: vault,
-        passphrase: password,
-      );
+      final Map<String, int> stats;
+      if (_pickedVaultFile != null) {
+        stats = await _repository.recoverAndRestoreFromEncryptedVaultFile(
+          file: _pickedVaultFile!,
+          passphrase: password,
+        );
+      } else {
+        final text = _restoreVaultTextController.text.trim();
+        if (text.isEmpty) {
+          throw const MalformedBackupPayloadException('Please paste your encrypted backup vault payload.');
+        }
+        stats = await _repository.recoverAndRestoreFromEncryptedVault(
+          vaultJsonString: text,
+          passphrase: password,
+        );
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Vault restored successfully! Welcome back.'),
+        SnackBar(
+          content: Text('Vault restored! ${stats['periods']} periods & ${stats['symptoms']} symptoms recovered.'),
           backgroundColor: AppColors.dropCoral,
         ),
       );
@@ -169,7 +224,7 @@ class _OnboardingViewState extends State<OnboardingView> {
         setState(() => _isRestoring = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Restore failed: $e'),
+            content: Text('Restore failed: $e. Your vault was not modified.'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -445,7 +500,11 @@ class _OnboardingViewState extends State<OnboardingView> {
                     ? null
                     : () => setState(() {
                           _showRestoreForm = false;
-                          _restoreVaultController.clear();
+                          _pickedVaultFile = null;
+                          _pickedVaultFileName = null;
+                          _pickedVaultFileSize = null;
+                          _showTextPasteFallback = false;
+                          _restoreVaultTextController.clear();
                           _restorePasswordController.clear();
                         }),
                 icon: const Icon(Icons.arrow_back, size: 16, color: AppColors.textMuted),
@@ -461,41 +520,115 @@ class _OnboardingViewState extends State<OnboardingView> {
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Paste your encrypted backup and enter the vault password to recover all your data.',
+                _showTextPasteFallback
+                    ? 'Paste your encrypted backup payload and enter your password.'
+                    : 'Select your .safebloom vault backup file and enter your password to recover all your data.',
                 style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            TextField(
-              controller: _restoreVaultController,
-              maxLines: 5,
-              enabled: !_isRestoring,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
-              decoration: InputDecoration(
-                hintText: 'Paste {"safe_bloom_backup_version": 1, ...}',
-                filled: true,
-                fillColor: AppColors.lightCardBackground,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                  borderSide: const BorderSide(color: AppColors.lightCardBorder),
+
+            if (!_showTextPasteFallback) ...[
+              if (_pickedVaultFile == null)
+                GestureDetector(
+                  key: const ValueKey('onboarding_pick_vault_file'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _isRestoring ? null : _pickVaultFileForRestore,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    decoration: BoxDecoration(
+                      color: AppColors.lightCardBackground,
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                      border: Border.all(color: AppColors.dropCoral, width: 1.5),
+                    ),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.file_open_rounded, size: 36, color: AppColors.dropCoral),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          'SELECT .SAFEBLOOM FILE',
+                          style: AppTypography.brandTagline(color: AppColors.dropCoral, fontSize: 12),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Tap to browse device storage',
+                          style: AppTypography.body(fontSize: 11, color: AppColors.textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  decoration: BoxDecoration(
+                    color: AppColors.lightCardBackground,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                    border: Border.all(color: AppColors.dropCoral),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.shield_rounded, color: AppColors.dropCoral, size: 28),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _pickedVaultFileName ?? 'Vault File Selected',
+                              style: AppTypography.body(fontSize: 13, fontWeight: FontWeight.w600),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (_pickedVaultFileSize != null)
+                              Text(
+                                '${(_pickedVaultFileSize! / 1024).toStringAsFixed(1)} KB • Encrypted Vault',
+                                style: AppTypography.body(fontSize: 11, color: AppColors.textMuted),
+                              ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _isRestoring ? null : _pickVaultFileForRestore,
+                        child: Text('CHANGE', style: AppTypography.brandTagline(color: AppColors.dropCoral, fontSize: 11)),
+                      ),
+                    ],
+                  ),
+                ),
+            ] else ...[
+              TextField(
+                controller: _restoreVaultTextController,
+                maxLines: 5,
+                enabled: !_isRestoring,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+                decoration: InputDecoration(
+                  hintText: 'Paste {"safe_bloom_backup_version": 1, ...}',
+                  filled: true,
+                  fillColor: AppColors.lightCardBackground,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                    borderSide: const BorderSide(color: AppColors.lightCardBorder),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: _isRestoring
-                    ? null
-                    : () async {
-                        final data = await Clipboard.getData(Clipboard.kTextPlain);
-                        if (data?.text != null) _restoreVaultController.text = data!.text!;
-                      },
-                icon: const Icon(Icons.paste, size: 14, color: AppColors.dropCoral),
-                label: Text('PASTE', style: AppTypography.brandTagline(color: AppColors.dropCoral, fontSize: 10)),
+              const SizedBox(height: AppSpacing.xs),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _isRestoring
+                      ? null
+                      : () async {
+                          final data = await Clipboard.getData(Clipboard.kTextPlain);
+                          if (data?.text != null) _restoreVaultTextController.text = data!.text!;
+                        },
+                  icon: const Icon(Icons.paste, size: 14, color: AppColors.dropCoral),
+                  label: Text('PASTE', style: AppTypography.brandTagline(color: AppColors.dropCoral, fontSize: 10)),
+                ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
+            ],
+
+            const SizedBox(height: AppSpacing.md),
             TextField(
               controller: _restorePasswordController,
               obscureText: _restoreObscure,
@@ -539,6 +672,20 @@ class _OnboardingViewState extends State<OnboardingView> {
                         'RESTORE VAULT',
                         style: AppTypography.brandTagline(color: Colors.white, fontSize: 13),
                       ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            TextButton(
+              onPressed: _isRestoring
+                  ? null
+                  : () => setState(() {
+                        _showTextPasteFallback = !_showTextPasteFallback;
+                      }),
+              child: Text(
+                _showTextPasteFallback
+                    ? '← Select .safebloom file instead'
+                    : 'Paste encrypted text backup instead',
+                style: AppTypography.body(fontSize: 12, color: AppColors.textMuted),
               ),
             ),
           ],
