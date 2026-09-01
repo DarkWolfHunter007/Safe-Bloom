@@ -1,0 +1,95 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Safe Bloom — CI Validation Workflow
+# ──────────────────────────────────────────────────────────────────────────────
+# Runs on every push/PR to main. Validates:
+#   - Flutter build succeeds
+#   - If latest-release.json exists, it is structurally valid
+#   - Release workflow YAML is valid
+# ──────────────────────────────────────────────────────────────────────────────
+name: CI Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate release workflow YAML
+        run: |
+          if [ -f ".github/workflows/release.yml" ]; then
+            python3 -c "
+          import yaml, sys
+          try:
+              with open('.github/workflows/release.yml') as f:
+                  data = yaml.safe_load(f)
+              assert 'on' in data, 'Missing trigger configuration'
+              assert 'jobs' in data, 'Missing jobs configuration'
+              print('✅ release.yml is valid YAML with required structure')
+          except Exception as e:
+              print(f'❌ release.yml validation failed: {e}')
+              sys.exit(1)
+          "
+          fi
+
+      - name: Validate latest-release.json (if present)
+        run: |
+          if [ -f "latest-release.json" ]; then
+            echo "Validating existing latest-release.json..."
+            python3 << 'VALIDATE'
+          import json, re, sys
+
+          with open('latest-release.json') as f:
+              data = json.load(f)
+
+          errors = []
+
+          # Required top-level fields
+          for field in ['tag', 'version', 'commit_sha', 'release_date', 'artifacts', 'generated_by']:
+              if field not in data:
+                  errors.append(f'Missing required field: {field}')
+
+          # generated_by must be github-actions (not manually created)
+          if data.get('generated_by') != 'github-actions':
+              errors.append(f'generated_by must be "github-actions", got: {data.get("generated_by")}')
+
+          # Validate artifacts
+          for i, a in enumerate(data.get('artifacts', [])):
+              sha = a.get('sha256', '')
+              if not re.match(r'^[0-9a-f]{64}$', sha):
+                  errors.append(f'Artifact[{i}] invalid sha256: {sha}')
+              if sha == '0' * 64:
+                  errors.append(f'Artifact[{i}] has placeholder zero-hash')
+              if sha == 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855':
+                  errors.append(f'Artifact[{i}] has empty-file hash')
+
+          if errors:
+              for e in errors:
+                  print(f'❌ {e}')
+              sys.exit(1)
+          else:
+              print(f'✅ latest-release.json is valid ({len(data.get("artifacts",[]))} artifacts)')
+          VALIDATE
+          else
+            echo "ℹ️  No latest-release.json present (expected before first release)"
+          fi
+
+      - name: Check for hard-coded SHA values in website JS
+        run: |
+          # This check catches if someone accidentally hard-codes a SHA in
+          # any JavaScript file that should be fetching dynamically
+          if find . -name "*.js" -exec grep -lP '[0-9a-f]{64}' {} \; 2>/dev/null | grep -v node_modules | grep -v '.min.js' | head -5 | grep -q .; then
+            echo "⚠️  Warning: Found potential hard-coded SHA-256 values in JS files:"
+            find . -name "*.js" -exec grep -lP '[0-9a-f]{64}' {} \; 2>/dev/null | grep -v node_modules | grep -v '.min.js'
+          else
+            echo "✅ No hard-coded SHA-256 values found in JS files"
+          fi

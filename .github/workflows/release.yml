@@ -1,0 +1,278 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Safe Bloom — Release Workflow
+# ──────────────────────────────────────────────────────────────────────────────
+# Trigger:  Push a tag matching  v*  (e.g. v1.0.0, v1.2.3-beta)
+#
+# Pipeline:
+#   1. flutter build apk  (per-ABI splits + universal fat APK)
+#   2. SHA-256 of every produced APK (calculated from the actual build output)
+#   3. Generate  latest-release.json  with all metadata
+#   4. Create GitHub Release and upload APK artifacts
+#   5. Commit  latest-release.json  to the main branch so the website
+#      can fetch it from raw.githubusercontent.com (no GitHub API needed)
+# ──────────────────────────────────────────────────────────────────────────────
+name: Build & Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write      # Create releases and push metadata commit
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+
+      # ── 1. Checkout ─────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0          # Full history for changelog context
+
+      # ── 2. Extract version from tag ─────────────────────────────────────
+      - name: Extract tag metadata
+        id: tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          COMMIT_SHA="${GITHUB_SHA}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Tag: ${TAG}  Version: ${VERSION}  Commit: ${COMMIT_SHA}"
+
+      # ── 3. Set up Java (required by Gradle) ────────────────────────────
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # ── 4. Set up Flutter ───────────────────────────────────────────────
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.3'
+          channel: 'stable'
+          cache: true
+
+      # ── 5. Install dependencies ─────────────────────────────────────────
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      # ── 6. Build split APKs (per-ABI) ──────────────────────────────────
+      - name: Build split APKs (arm64-v8a, armeabi-v7a, x86_64)
+        run: flutter build apk --split-per-abi --release
+
+      # ── 7. Build universal (fat) APK ───────────────────────────────────
+      - name: Build universal APK
+        run: flutter build apk --release
+
+      # ── 8. Compute SHA-256 and generate metadata ───────────────────────
+      - name: Generate release metadata (latest-release.json)
+        id: metadata
+        run: |
+          set -euo pipefail
+
+          APK_DIR="build/app/outputs/flutter-apk"
+          TAG="${{ steps.tag.outputs.tag }}"
+          VERSION="${{ steps.tag.outputs.version }}"
+          COMMIT="${{ steps.tag.outputs.commit_sha }}"
+          REPO="DarkWolfHunter007/Safe-Bloom"
+          DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          # Define the expected APK files and their human-readable ABI labels
+          declare -A ABI_LABELS=(
+            ["app-arm64-v8a-release.apk"]="arm64-v8a"
+            ["app-armeabi-v7a-release.apk"]="armeabi-v7a"
+            ["app-x86_64-release.apk"]="x86_64"
+            ["app-release.apk"]="universal"
+          )
+
+          declare -A ABI_DESCRIPTIONS=(
+            ["app-arm64-v8a-release.apk"]="Modern Android phones (64-bit ARM) — Recommended"
+            ["app-armeabi-v7a-release.apk"]="Older Android phones (32-bit ARM)"
+            ["app-x86_64-release.apk"]="Emulators and ChromeOS (x86_64)"
+            ["app-release.apk"]="Universal (all architectures, larger file)"
+          )
+
+          # Build the JSON artifacts array
+          ARTIFACTS_JSON="["
+          FIRST=true
+          for APK_FILE in "app-arm64-v8a-release.apk" "app-armeabi-v7a-release.apk" "app-x86_64-release.apk" "app-release.apk"; do
+            APK_PATH="${APK_DIR}/${APK_FILE}"
+
+            if [ ! -f "${APK_PATH}" ]; then
+              echo "::error::Expected APK not found: ${APK_PATH}"
+              exit 1
+            fi
+
+            SHA256="$(sha256sum "${APK_PATH}" | cut -d' ' -f1)"
+            SIZE="$(stat -c%s "${APK_PATH}")"
+            ABI="${ABI_LABELS[${APK_FILE}]}"
+            DESC="${ABI_DESCRIPTIONS[${APK_FILE}]}"
+            DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${APK_FILE}"
+
+            if [ "${FIRST}" = "true" ]; then
+              FIRST=false
+            else
+              ARTIFACTS_JSON+=","
+            fi
+
+            ARTIFACTS_JSON+=$(cat <<ARTIFACT_EOF
+          {
+              "filename": "${APK_FILE}",
+              "abi": "${ABI}",
+              "description": "${DESC}",
+              "size_bytes": ${SIZE},
+              "sha256": "${SHA256}",
+              "download_url": "${DOWNLOAD_URL}"
+            }
+          ARTIFACT_EOF
+          )
+          done
+          ARTIFACTS_JSON+="]"
+
+          # Read changelog if it exists for this version
+          CHANGELOG_FILE="changelog/${TAG}.md"
+          if [ -f "${CHANGELOG_FILE}" ]; then
+            # Escape JSON special characters in changelog
+            CHANGELOG_BODY="$(cat "${CHANGELOG_FILE}" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')"
+          else
+            CHANGELOG_BODY='""'
+          fi
+
+          # Write the complete metadata file
+          cat > latest-release.json <<JSON_EOF
+          {
+            "schema_version": 1,
+            "app_name": "Safe Bloom",
+            "tag": "${TAG}",
+            "version": "${VERSION}",
+            "commit_sha": "${COMMIT}",
+            "release_date": "${DATE}",
+            "release_url": "https://github.com/${REPO}/releases/tag/${TAG}",
+            "repository": "https://github.com/${REPO}",
+            "artifacts": ${ARTIFACTS_JSON},
+            "changelog": ${CHANGELOG_BODY},
+            "generated_by": "github-actions",
+            "generated_at": "${DATE}"
+          }
+          JSON_EOF
+
+          # Validate JSON
+          python3 -m json.tool latest-release.json > /dev/null
+          echo "✅ latest-release.json generated and validated"
+          cat latest-release.json
+
+          # Output individual SHA values for verification logging
+          for APK_FILE in "app-arm64-v8a-release.apk" "app-armeabi-v7a-release.apk" "app-x86_64-release.apk" "app-release.apk"; do
+            sha256sum "${APK_DIR}/${APK_FILE}"
+          done
+
+      # ── 9. Verify metadata integrity ───────────────────────────────────
+      - name: Verify metadata matches actual APKs
+        run: |
+          set -euo pipefail
+
+          APK_DIR="build/app/outputs/flutter-apk"
+
+          echo "🔍 Verifying SHA-256 values in latest-release.json match actual APK files..."
+
+          # Extract each artifact and verify
+          ARTIFACT_COUNT=$(python3 -c "import json; data=json.load(open('latest-release.json')); print(len(data['artifacts']))")
+
+          if [ "${ARTIFACT_COUNT}" -lt 4 ]; then
+            echo "::error::Expected at least 4 artifacts, found ${ARTIFACT_COUNT}"
+            exit 1
+          fi
+
+          python3 << 'VERIFY_SCRIPT'
+          import json, hashlib, sys, os
+
+          with open('latest-release.json') as f:
+              data = json.load(f)
+
+          apk_dir = 'build/app/outputs/flutter-apk'
+          errors = []
+
+          for artifact in data['artifacts']:
+              filename = artifact['filename']
+              expected_sha = artifact['sha256']
+              filepath = os.path.join(apk_dir, filename)
+
+              if not os.path.exists(filepath):
+                  errors.append(f"MISSING: {filepath}")
+                  continue
+
+              with open(filepath, 'rb') as f:
+                  actual_sha = hashlib.sha256(f.read()).hexdigest()
+
+              if actual_sha != expected_sha:
+                  errors.append(f"MISMATCH: {filename} expected={expected_sha} actual={actual_sha}")
+                  print(f"❌ {filename}: SHA-256 MISMATCH")
+              else:
+                  print(f"✅ {filename}: {actual_sha}")
+
+          if errors:
+              print("\n::error::SHA-256 verification failed:")
+              for e in errors:
+                  print(f"  {e}")
+              sys.exit(1)
+
+          print(f"\n✅ All {len(data['artifacts'])} artifacts verified successfully")
+          VERIFY_SCRIPT
+
+      # ── 10. Create GitHub Release with APK assets ──────────────────────
+      - name: Read changelog for release body
+        id: changelog
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          CHANGELOG_FILE="changelog/${TAG}.md"
+          if [ -f "${CHANGELOG_FILE}" ]; then
+            # Use the changelog file as release body
+            echo "has_changelog=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changelog=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Safe Bloom ${{ steps.tag.outputs.tag }}"
+          body_path: ${{ steps.changelog.outputs.has_changelog == 'true' && format('changelog/{0}.md', steps.tag.outputs.tag) || '' }}
+          generate_release_notes: ${{ steps.changelog.outputs.has_changelog != 'true' }}
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.tag, '-') }}
+          files: |
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
+            build/app/outputs/flutter-apk/app-release.apk
+            latest-release.json
+
+      # ── 11. Commit metadata to main branch ─────────────────────────────
+      - name: Commit latest-release.json to main branch
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Switch to main branch (we're on a detached tag HEAD)
+          git fetch origin main
+          git checkout main
+
+          # Copy the generated metadata
+          cp latest-release.json latest-release.json
+
+          git add latest-release.json
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+
+          git commit -m "chore: update latest-release.json for ${{ steps.tag.outputs.tag }} [skip ci]"
+          git push origin main
