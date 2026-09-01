@@ -26,10 +26,10 @@ class _HomeShellViewState extends State<HomeShellView> {
   void initState() {
     super.initState();
     _views = [
-      TodayView(key: _todayKey),
-      CalendarView(key: _calendarKey),
-      InsightsView(key: _insightsKey),
-      SettingsView(key: _settingsKey),
+      RepaintBoundary(child: TodayView(key: _todayKey)),
+      RepaintBoundary(child: CalendarView(key: _calendarKey)),
+      RepaintBoundary(child: InsightsView(key: _insightsKey)),
+      RepaintBoundary(child: SettingsView(key: _settingsKey)),
     ];
   }
 

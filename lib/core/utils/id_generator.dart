@@ -1,12 +1,12 @@
-import 'package:uuid/uuid.dart';
+import 'dart:math';
 
-const _uuid = Uuid();
+final _random = Random.secure();
 
-/// Generates a UUID v4 unique ID with an optional prefix.
-/// UUID v4 provides 122 bits of randomness — collision-safe even at high write rates.
+/// Generates a cryptographically secure 128-bit random unique ID.
 String generateUniqueId([String prefix = '']) {
-  final id = _uuid.v4();
-  return prefix.isNotEmpty ? '${prefix}_$id' : id;
+  final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
+  final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  return prefix.isNotEmpty ? '${prefix}_$hex' : hex;
 }
 
 class IdGenerator {

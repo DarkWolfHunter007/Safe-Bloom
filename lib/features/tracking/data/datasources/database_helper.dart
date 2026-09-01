@@ -140,32 +140,66 @@ class DatabaseHelper {
     const key = 'safebloom_db_key';
     final dbExists = await databaseFileExists();
 
-    // flutter_secure_storage can throw on Android when the EncryptedSharedPreferences
-    // file has been wiped (e.g. pm clear / reinstall) while the Android Keystore alias
-    // still exists. Treat any read error as a missing key so a clean install always works.
     String? dbKey;
+    // 1. Primary read using SafeBloomSecureStorage
     try {
       dbKey = await _secureStorage.read(key: key);
     } catch (_) {
       dbKey = null;
     }
 
+    // 2. Fallback read using standard Android Keystore if EncryptedSharedPreferences threw an error
     if (dbKey == null || dbKey.trim().isEmpty) {
-      if (dbExists) {
-        // DB file is present but key is gone — cannot safely open without key
-        throw const DatabaseKeyMissingException();
-      }
-      // Fresh install: generate a new key and persist it
-      final random = Random.secure();
-      final values = List<int>.generate(32, (i) => random.nextInt(256));
-      dbKey = base64UrlEncode(values);
       try {
-        await _secureStorage.write(key: key, value: dbKey);
+        const fallbackStorage = FlutterSecureStorage(
+          aOptions: AndroidOptions(encryptedSharedPreferences: false),
+          iOptions: SafeBloomSecureStorage.iosOptions,
+        );
+        dbKey = await fallbackStorage.read(key: key);
       } catch (_) {
-        // If write also fails (rare Keystore issue), continue in-memory.
-        // The key will be regenerated on next launch; acceptable for a first run.
+        dbKey = null;
       }
     }
+
+    if (dbKey != null && dbKey.trim().isNotEmpty) {
+      return dbKey;
+    }
+
+    if (dbExists) {
+      // DB file is present on disk but key is missing from Android Keystore
+      throw const DatabaseKeyMissingException();
+    }
+
+    // Fresh install: generate a new 256-bit secure key
+    final random = Random.secure();
+    final values = List<int>.generate(32, (i) => random.nextInt(256));
+    dbKey = base64UrlEncode(values);
+
+    // Persist key to secure storage with write verification
+    bool writeSucceeded = false;
+    try {
+      await _secureStorage.write(key: key, value: dbKey);
+      final readBack = await _secureStorage.read(key: key);
+      writeSucceeded = (readBack == dbKey);
+    } catch (_) {
+      writeSucceeded = false;
+    }
+
+    if (!writeSucceeded) {
+      try {
+        const fallbackStorage = FlutterSecureStorage(
+          aOptions: AndroidOptions(encryptedSharedPreferences: false),
+          iOptions: SafeBloomSecureStorage.iosOptions,
+        );
+        await fallbackStorage.write(key: key, value: dbKey);
+      } catch (e) {
+        throw DatabaseCorruptedOrInvalidKeyException(
+          e,
+          'Unable to safely persist encryption key in Android Keystore.',
+        );
+      }
+    }
+
     return dbKey;
   }
 
@@ -454,12 +488,25 @@ class DatabaseHelper {
     } catch (_) {}
 
     const key = 'safebloom_db_key';
-    String? dbKey = await _secureStorage.read(key: key);
+    String? dbKey;
+    try {
+      dbKey = await _secureStorage.read(key: key);
+    } catch (_) {
+      dbKey = null;
+    }
     if (dbKey == null || dbKey.trim().isEmpty) {
       final random = Random.secure();
       final values = List<int>.generate(32, (i) => random.nextInt(256));
       dbKey = base64UrlEncode(values);
-      await _secureStorage.write(key: key, value: dbKey);
+      try {
+        await _secureStorage.write(key: key, value: dbKey);
+      } catch (_) {
+        const fallbackStorage = FlutterSecureStorage(
+          aOptions: AndroidOptions(encryptedSharedPreferences: false),
+          iOptions: SafeBloomSecureStorage.iosOptions,
+        );
+        await fallbackStorage.write(key: key, value: dbKey);
+      }
     }
 
     final Database db;
@@ -467,7 +514,7 @@ class DatabaseHelper {
       db = await _customFactory!.openDatabase(
         path,
         options: OpenDatabaseOptions(
-          version: 3,
+          version: 4,
           onCreate: _createDB,
           onUpgrade: _onUpgrade,
           singleInstance: false,
@@ -477,7 +524,7 @@ class DatabaseHelper {
       db = await openDatabase(
         path,
         password: dbKey,
-        version: 3,
+        version: 4,
         onCreate: _createDB,
         onUpgrade: _onUpgrade,
         singleInstance: false,

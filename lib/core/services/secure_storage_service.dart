@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class SafeBloomSecureStorage {
   static const AndroidOptions androidOptions = AndroidOptions(
     encryptedSharedPreferences: true,
+    resetOnError: true,
   );
 
   static const IOSOptions iosOptions = IOSOptions(
@@ -14,12 +15,6 @@ class SafeBloomSecureStorage {
 
   /// Standard singleton instance with hardware-isolated options.
   static const FlutterSecureStorage instance = FlutterSecureStorage(
-    aOptions: androidOptions,
-    iOptions: iosOptions,
-  );
-
-  /// Creates a configured FlutterSecureStorage instance.
-  static FlutterSecureStorage create() => const FlutterSecureStorage(
     aOptions: androidOptions,
     iOptions: iosOptions,
   );

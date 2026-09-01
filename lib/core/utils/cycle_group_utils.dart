@@ -53,13 +53,6 @@ class CycleGroupUtils {
     return allEvents.where((group) => group.any((e) => e.isActiveFlow)).toList();
   }
 
-  /// Alias for [groupIntoCycles] aligning with architecture specifications.
-  static List<List<PeriodEntry>> groupConsecutivePeriodDays(
-    List<PeriodEntry> entries, {
-    int gapDays = 4,
-  }) =>
-      groupIntoCycles(entries, gapDays: gapDays);
-
   /// Returns the cycle anchor (start date) for a menstrual cycle.
   /// The cycle start anchor is always the first active-flow day (light, medium, heavy).
   /// Any leading spotting entries do NOT become Cycle Day 1.

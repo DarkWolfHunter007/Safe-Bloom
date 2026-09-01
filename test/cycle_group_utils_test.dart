@@ -102,17 +102,5 @@ void main() {
       expect(cycles.first.first.id, equals('1'));
       expect(cycles.first.last.id, equals('3'));
     });
-
-    test('groupConsecutivePeriodDays alias produces identical grouping results', () {
-      final start1 = DateTime(2026, 8, 1);
-      final start2 = DateTime(2026, 8, 29);
-      final entries = [
-        PeriodEntry(id: '1', timestamp: start1, flow: FlowLevel.heavy),
-        PeriodEntry(id: '2', timestamp: start2, flow: FlowLevel.heavy),
-      ];
-
-      final cycles = CycleGroupUtils.groupConsecutivePeriodDays(entries, gapDays: 4);
-      expect(cycles.length, 2);
-    });
   });
 }

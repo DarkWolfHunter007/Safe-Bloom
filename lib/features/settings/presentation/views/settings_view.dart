@@ -17,9 +17,9 @@ import '../../../tracking/data/repositories/tracking_repository.dart';
 import '../../../tracking/domain/entities/user_profile.dart';
 import '../../../tracking/domain/services/pdf_report_generator.dart';
 import '../../../tracking/presentation/views/cycle_history_view.dart';
+import '../../../../core/content/legal_content.dart';
+import 'legal_document_view.dart';
 import 'notification_settings_view.dart';
-import 'privacy_policy_view.dart';
-import 'terms_view.dart';
 
 class SettingsView extends StatefulWidget {
   const SettingsView({super.key});
@@ -1217,7 +1217,12 @@ class SettingsViewState extends State<SettingsView>
                     trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
                     onTap: () {
                       Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const PrivacyPolicyView()),
+                        MaterialPageRoute(
+                          builder: (_) => const LegalDocumentView(
+                            title: 'Privacy Policy',
+                            content: LegalContent.privacyPolicy,
+                          ),
+                        ),
                       );
                     },
                   ),
@@ -1228,7 +1233,12 @@ class SettingsViewState extends State<SettingsView>
                     trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
                     onTap: () {
                       Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const TermsView()),
+                        MaterialPageRoute(
+                          builder: (_) => const LegalDocumentView(
+                            title: 'Terms of Service',
+                            content: LegalContent.termsOfService,
+                          ),
+                        ),
                       );
                     },
                   ),

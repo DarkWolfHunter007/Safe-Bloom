@@ -401,8 +401,8 @@ class CycleChartsWidgetState extends State<CycleChartsWidget> {
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
             child: _selectedTab == 0
-                ? _buildCycleTrendLineChart()
-                : _buildSymptomFrequencyBarChart(),
+                ? RepaintBoundary(child: _buildCycleTrendLineChart())
+                : RepaintBoundary(child: _buildSymptomFrequencyBarChart()),
           ),
 
           const SizedBox(height: AppSpacing.sm),

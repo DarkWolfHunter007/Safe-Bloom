@@ -251,12 +251,16 @@ class TrackingRepository {
     required String passphrase,
     bool clearExisting = true,
   }) async {
-    final vaultJsonString = await VaultFileService.readVaultFile(file);
-    return importEncryptedVault(
-      vaultJsonString: vaultJsonString,
-      passphrase: passphrase,
-      clearExisting: clearExisting,
-    );
+    try {
+      final vaultJsonString = await VaultFileService.readVaultFile(file);
+      return await importEncryptedVault(
+        vaultJsonString: vaultJsonString,
+        passphrase: passphrase,
+        clearExisting: clearExisting,
+      );
+    } finally {
+      await VaultFileService.cleanTemporaryVaultFiles(file);
+    }
   }
 
   /// Safely recovers from database corruption by decrypting a backup vault and
@@ -280,11 +284,15 @@ class TrackingRepository {
     required File file,
     required String passphrase,
   }) async {
-    final vaultJsonString = await VaultFileService.readVaultFile(file);
-    return recoverAndRestoreFromEncryptedVault(
-      vaultJsonString: vaultJsonString,
-      passphrase: passphrase,
-    );
+    try {
+      final vaultJsonString = await VaultFileService.readVaultFile(file);
+      return await recoverAndRestoreFromEncryptedVault(
+        vaultJsonString: vaultJsonString,
+        passphrase: passphrase,
+      );
+    } finally {
+      await VaultFileService.cleanTemporaryVaultFiles(file);
+    }
   }
 
   /// Recreates the database and imports valid JSON data.

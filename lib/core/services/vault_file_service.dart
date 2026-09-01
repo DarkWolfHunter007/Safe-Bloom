@@ -154,4 +154,16 @@ class VaultFileService {
     BackupCryptoService.validateVaultEnvelope(content);
     return content;
   }
+
+  /// Safely deletes staging/temporary vault files from the app cache directory.
+  static Future<void> cleanTemporaryVaultFiles([File? specificFile]) async {
+    try {
+      if (specificFile != null && await specificFile.exists()) {
+        final tempDir = await getTemporaryDirectory();
+        if (p.isWithin(tempDir.path, specificFile.path) || specificFile.path.startsWith(tempDir.path)) {
+          await specificFile.delete();
+        }
+      }
+    } catch (_) {}
+  }
 }

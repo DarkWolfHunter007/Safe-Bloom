@@ -21,7 +21,6 @@ dependencies:
   url_launcher: ^6.3.0
   http: ^1.2.0
   flutter_local_notifications: ^19.0.0
-  uuid: ^4.5.1
   timezone: ^0.10.0
   crypto: ^3.0.3
   file_picker: ^11.0.3

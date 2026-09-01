@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
-import '../../../../core/content/legal_content.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 
-class PrivacyPolicyView extends StatelessWidget {
-  const PrivacyPolicyView({super.key});
+/// Unified viewer for legal documents (Privacy Policy, Terms of Service, Medical Disclaimers).
+class LegalDocumentView extends StatelessWidget {
+  final String title;
+  final String content;
+
+  const LegalDocumentView({
+    super.key,
+    required this.title,
+    required this.content,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +26,7 @@ class PrivacyPolicyView extends StatelessWidget {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
-          'Privacy Policy',
+          title,
           style: AppTypography.brandTitle(fontSize: 20),
         ),
       ),
@@ -34,7 +41,7 @@ class PrivacyPolicyView extends StatelessWidget {
               border: Border.all(color: AppColors.lightCardBorder),
             ),
             child: Text(
-              LegalContent.privacyPolicy,
+              content,
               style: AppTypography.body(fontSize: 13, color: AppColors.textMain),
             ),
           ),
